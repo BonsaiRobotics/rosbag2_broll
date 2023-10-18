@@ -1,0 +1,9 @@
+<library path="rosbag2_storage_broll">
+  <class
+    name="avcodec"
+    type="rosbag2_storage_broll::BRollStorage"
+    base_class_type="rosbag2_storage::storage_interfaces::ReadOnlyInterface"
+  >
+    <description>Read video files (e.g. MP4) using libavcodec</description>
+  </class>
+</library>
