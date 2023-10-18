@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Bonsai Robotics, Inc - All Rights Reserved
+// Copyright 2023 Bonsai Robotics, Inc - All Rights Reserved
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -160,12 +160,19 @@ void BRollStorage::open(
   io_flag_ = io_flag;
 
   if (io_flag != rosbag2_storage::storage_interfaces::IOFlag::READ_ONLY) {
-    throw std::runtime_error("BRollStorage only supports read only");
+    RCLCPP_ERROR(logger_, "BRollStorage only supports read only");
+    throw std::runtime_error("");
   }
 
   if (!storage_options.storage_config_uri.empty()) {
     YAML::Node node = YAML::LoadFile(storage_options.storage_config_uri);
     config_ = node.as<BRollStorageConfig>();
+  }
+  if (config_.pub_compressed && config_.pub_decoded) {
+    RCLCPP_ERROR(
+      logger_,
+      "BRollStorage cannot publish both compressed and decoded at the same time (TODO)");
+    throw std::runtime_error("");
   }
 
   video_reader_.emplace(storage_options.uri);
@@ -180,7 +187,7 @@ void BRollStorage::open(
   // TODO(emersonknapp) starting time, message count
   metadata_.starting_time = std::chrono::time_point<std::chrono::high_resolution_clock>{
     std::chrono::nanoseconds{0}};
-  // metadata_.message_count = video_reader_->frame_count();
+  metadata_.message_count = video_reader_->frame_count();
   metadata_.compression_format = "";
   metadata_.compression_mode = "";
 
@@ -233,18 +240,13 @@ bool BRollStorage::has_next()
 
 std::shared_ptr<rosbag2_storage::SerializedBagMessage> BRollStorage::read_next()
 {
-  if (!deferred_next_.empty()) {
-    auto ret = deferred_next_.front();
-    deferred_next_.pop();
-    return ret;
-  }
-
   rclcpp::Time starting_time = rclcpp::Time{0};  // TODO(emersonknapp) starting time offset
   // TODO(emersonknapp) topic_filter
   if (config_.pub_compressed && !published_params_) {
     published_params_ = true;
     return serialize_msg(video_reader_->codec_parameters_msg(), config_.param_topic, starting_time);
   }
+
   AVPacket * packet = video_reader_->read_next();
   rclcpp::Time ts =
     starting_time +
@@ -259,7 +261,7 @@ std::shared_ptr<rosbag2_storage::SerializedBagMessage> BRollStorage::read_next()
     ci_msg.format = video_reader_->format_name();
     ci_msg.data.resize(packet->size);
     memcpy(&ci_msg.data[0], packet->data, packet->size);
-    deferred_next_.push(serialize_msg(ci_msg, config_.compressed_topic, ts));
+    return serialize_msg(ci_msg, config_.compressed_topic, ts);
   }
   if (config_.pub_decoded) {
     // TODO(emersonknapp) use preallocated pools to avoid dynamic alloc
@@ -267,13 +269,7 @@ std::shared_ptr<rosbag2_storage::SerializedBagMessage> BRollStorage::read_next()
     frame_decoder_->decode(*packet, image_msg);
     image_msg.header.stamp = ts;
     image_msg.header.frame_id = config_.tf_frame_id;
-    deferred_next_.push(serialize_msg(image_msg, config_.decoded_topic, ts));
-  }
-
-  if (!deferred_next_.empty()) {
-    auto ret = deferred_next_.front();
-    deferred_next_.pop();
-    return ret;
+    return serialize_msg(image_msg, config_.decoded_topic, ts);
   }
   return nullptr;
 }

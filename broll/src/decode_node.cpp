@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Bonsai Robotics, Inc - All Rights Reserved
+// Copyright 2023 Bonsai Robotics, Inc - All Rights Reserved
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ protected:
 };
 
 DecodeNode::DecodeNode(const rclcpp::NodeOptions & options)
-: rclcpp::Node("avcodec_decode", options)
+: rclcpp::Node("broll_decode", options)
 {
   const std::string in_topic = "video/compressed";
   const std::string out_topic = "video/raw";
