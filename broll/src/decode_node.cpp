@@ -19,6 +19,7 @@
 
 #include "avcodec_msgs/msg/video_codec_parameters.hpp"
 #include "broll/frame_decoder.hpp"
+#include "broll/msg_conversions.hpp"
 
 namespace broll
 {

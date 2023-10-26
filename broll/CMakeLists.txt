@@ -83,6 +83,9 @@ endif()
 ament_export_include_directories(
   "include/${PROJECT_NAME}"
 )
+ament_export_dependencies(
+  avcodec_msgs
+)
 ament_export_libraries(
   broll
 )

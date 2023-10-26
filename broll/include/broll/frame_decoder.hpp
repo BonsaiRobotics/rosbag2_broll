@@ -25,8 +25,6 @@ extern "C" {
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
-#include "msg_conversions.hpp"
-
 namespace broll
 {
 
@@ -55,9 +53,10 @@ public:
   /// @return True if decoding was successful, false otherwise
   bool decode(const sensor_msgs::msg::CompressedImage & in, sensor_msgs::msg::Image & out);
 
+  static bool convertToImage(const AVFrame & frame_in, sensor_msgs::msg::Image & img_out);
+
 protected:
   bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out, bool dbg_print = false);
-  bool convertToImage(const AVFrame & frame_in, sensor_msgs::msg::Image & img_out);
 
   AVCodec * codec_ = nullptr;
   AVCodecContext * codecCtx_ = nullptr;
