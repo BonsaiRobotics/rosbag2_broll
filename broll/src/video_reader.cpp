@@ -22,7 +22,9 @@ static const uint64_t NS_TO_S = 1000000000;
 namespace broll
 {
 
-VideoReader::VideoReader(const std::filesystem::path & videoPath)
+VideoReader::VideoReader(
+  const std::filesystem::path & videoPath,
+  bool do_annexb)
 {
   if (avformat_open_input(&formatCtx_, videoPath.c_str(), nullptr, nullptr) != 0) {
     throw std::runtime_error("Failed to open " + videoPath.string());
@@ -53,15 +55,32 @@ VideoReader::VideoReader(const std::filesystem::path & videoPath)
     "\tCodec ID %d bit_rate %ld",
     codecParams_->codec_id, codecParams_->bit_rate);
 
+  const char * bsf_name = nullptr;
   switch (codecId_) {
     case AV_CODEC_ID_HEVC:
       format_name_ = "hevc";
+      bsf_name = "hevc_mp4toannexb";
       break;
     case AV_CODEC_ID_H264:
       format_name_ = "h264";
+      bsf_name = "h264_mp4toannexb";
       break;
     default:
       throw std::runtime_error("Unsupported codec" + std::to_string(codecId_));
+  }
+
+  if (do_annexb) {
+    bitstreamFilter_ = av_bsf_get_by_name(bsf_name);
+    if (!bitstreamFilter_) {
+      throw std::runtime_error("Failed to find bitstream filter " + std::string(bsf_name));
+    }
+    if (av_bsf_alloc(bitstreamFilter_, &bsfCtx_) < 0) {
+      throw std::runtime_error("Failed to allocate bitstream filter context");
+    }
+    bsfCtx_->par_in = codecParams_;
+    if (av_bsf_init(bsfCtx_) < 0) {
+      throw std::runtime_error("Failed to initialize bitstream filter context");
+    }
   }
 
   ts_scale_ = std::chrono::nanoseconds{
@@ -77,34 +96,18 @@ VideoReader::~VideoReader()
   avformat_close_input(&formatCtx_);
 }
 
-bool VideoReader::has_next()
+AVPacket * VideoReader::read_next()
 {
-  if (nextPacket_->data) {
-    return true;
-  }
-
   while (av_read_frame(formatCtx_, nextPacket_) >= 0) {
     if (nextPacket_->stream_index == videoStreamIndex_) {
-      // TODO(emersonknapp) unref used packets?
-      return true;
+      return nextPacket_;
     }
     av_packet_unref(nextPacket_);
   }
-  return false;
+  return nullptr;
 }
 
-AVPacket * VideoReader::read_next()
-{
-  AVPacket * ret = nullptr;
-  if (has_next()) {
-    ret = nextPacket_;
-    nextPacket_ = av_packet_alloc();
-    assert(nextPacket_);
-  }
-  return ret;
-}
-
-AVCodecParameters * VideoReader::codec_parameters() const
+const AVCodecParameters * VideoReader::codec_parameters() const
 {
   return codecParams_;
 }

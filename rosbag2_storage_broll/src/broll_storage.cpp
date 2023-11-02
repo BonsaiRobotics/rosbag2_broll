@@ -129,16 +129,18 @@ public:
 
 protected:
   rosbag2_storage::BagMetadata metadata_{};
-  std::optional<broll::VideoReader> video_reader_;
-  std::optional<broll::FrameDecoder> frame_decoder_;
+
+  // Configs
   rosbag2_storage::StorageOptions options_;
   rosbag2_storage::storage_interfaces::IOFlag io_flag_;
   rosbag2_storage::StorageFilter filter_;
+  BRollStorageConfig config_;
+
   rclcpp::Logger logger_;
   bool published_params_ = false;
-  std::queue<std::shared_ptr<rosbag2_storage::SerializedBagMessage>> deferred_next_;
-
-  BRollStorageConfig config_;
+  std::optional<broll::VideoReader> video_reader_;
+  std::optional<broll::FrameDecoder> frame_decoder_;
+  AVPacket * next_frame_;
 };
 
 
@@ -175,7 +177,7 @@ void BRollStorage::open(
     throw std::runtime_error("");
   }
 
-  video_reader_.emplace(storage_options.uri);
+  video_reader_.emplace(storage_options.uri, true);
   frame_decoder_.emplace(
     video_reader_->codec_parameters(), config_.decoded_format, config_.decoded_scale);
 
@@ -235,19 +237,30 @@ std::string BRollStorage::get_storage_identifier() const
 bool BRollStorage::has_next()
 {
   // TODO(emersonknapp) topic_filter
-  return video_reader_->has_next();
+  if (next_frame_) {
+    return true;
+  }
+  next_frame_ = video_reader_->read_next();
+  return next_frame_ != nullptr;
 }
 
 std::shared_ptr<rosbag2_storage::SerializedBagMessage> BRollStorage::read_next()
 {
   rclcpp::Time starting_time = rclcpp::Time{0};  // TODO(emersonknapp) starting time offset
   // TODO(emersonknapp) topic_filter
-  if (config_.pub_compressed && !published_params_) {
-    published_params_ = true;
-    return serialize_msg(video_reader_->codec_parameters_msg(), config_.param_topic, starting_time);
-  }
+  // if (config_.pub_compressed && !published_params_) {
+  //   published_params_ = true;
+  //   return serialize_msg(video_reader_->codec_parameters_msg(), config_.param_topic, starting_time);
+  // }
 
-  AVPacket * packet = video_reader_->read_next();
+  if (!next_frame_) {
+    next_frame_ = video_reader_->read_next();
+    if (!next_frame_) {
+      return nullptr;
+    }
+  }
+  AVPacket * packet = next_frame_;
+
   rclcpp::Time ts =
     starting_time +
     rclcpp::Duration::from_nanoseconds(packet->pts * video_reader_->ts_scale().count());

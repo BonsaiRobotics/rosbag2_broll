@@ -17,6 +17,7 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 }
@@ -32,16 +33,17 @@ namespace broll
 class VideoReader
 {
 public:
-  explicit VideoReader(const std::filesystem::path & videoFilename);
+  explicit VideoReader(
+    const std::filesystem::path & videoFilename,
+    bool do_annexb = false);
   virtual ~VideoReader();
 
   // Core API
-  bool has_next();
   AVPacket * read_next();
 
   // Information accessors
   avcodec_msgs::msg::VideoCodecParameters codec_parameters_msg() const;
-  AVCodecParameters * codec_parameters() const;
+  const AVCodecParameters * codec_parameters() const;
   std::chrono::nanoseconds ts_scale() const;
   std::chrono::nanoseconds duration() const;
   uint64_t frame_count() const;
@@ -49,6 +51,8 @@ public:
 
 protected:
   AVFormatContext * formatCtx_ = nullptr;
+  const AVBitStreamFilter * bitstreamFilter_ = nullptr;
+  AVBSFContext * bsfCtx_ = nullptr;
   AVStream * stream_ = nullptr;
   AVPacket * nextPacket_ = nullptr;
   AVCodecID codecId_ = AV_CODEC_ID_NONE;

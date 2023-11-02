@@ -22,6 +22,7 @@ extern "C" {
 }
 
 #include "avcodec_msgs/msg/video_codec_parameters.hpp"
+#include "sensor_msgs/msg/image.hpp"
 
 namespace broll
 {
@@ -32,6 +33,12 @@ avcodec_msgs::msg::VideoCodecParameters message_from_parameters(
 // Note: caller gains ownership of the created object, and must later call avcodec_parameters_free
 AVCodecParameters * parameters_from_message(
   const avcodec_msgs::msg::VideoCodecParameters & m);
+
+/// @brief Converts a decoded AVFrame to a sensor_msgs::msg::Image
+/// @param frame
+/// @param img
+/// @return True if conversion was successful, false otherwise
+bool frame_to_image(const AVFrame & frame, sensor_msgs::msg::Image & img);
 
 }  // namespace broll
 

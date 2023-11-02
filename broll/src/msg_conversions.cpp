@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cassert>
 #include <functional>
 #include <string>
 
 extern "C" {
 #include "libavcodec/avcodec.h"
+#include "libavutil/imgutils.h"
 }
 
 #include "broll/msg_conversions.hpp"
@@ -84,6 +86,51 @@ AVCodecParameters * parameters_from_message(
   p->chroma_location = (AVChromaLocation)m.chroma_location;
   p->video_delay = m.video_delay;
   return p;
+}
+
+bool frame_to_image(const AVFrame & in, sensor_msgs::msg::Image & out)
+{
+  const int align_size = 16;
+
+  out.height = in.height;
+  out.width = in.width;
+  out.is_bigendian = false;
+
+  switch (in.format) {
+    case AV_PIX_FMT_RGB24:
+      out.encoding = "rgb8";
+      break;
+    case AV_PIX_FMT_BGR24:
+      out.encoding = "bgr8";
+      break;
+    default: {
+        int fourcc = avcodec_pix_fmt_to_codec_tag((AVPixelFormat)in.format);
+        out.encoding.resize(4);
+        for (int i = 0; i < 4; i++) {
+          out.encoding[i] = 0xFF & (fourcc >> (i * 8));
+        }
+      } break;
+  }
+
+  int data_size = av_image_get_buffer_size(
+    (AVPixelFormat)in.format,
+    in.width,
+    in.height,
+    align_size);
+  assert(data_size > 0);
+  out.step = data_size / out.height;
+
+  out.data.resize(data_size);
+  av_image_copy_to_buffer(
+    &out.data[0],
+    data_size,
+    in.data,
+    in.linesize,
+    (AVPixelFormat)in.format,
+    in.width,
+    in.height,
+    align_size);
+  return true;
 }
 
 }  // namespace broll
