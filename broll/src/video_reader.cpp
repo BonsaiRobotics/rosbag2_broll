@@ -47,6 +47,8 @@ VideoReader::VideoReader(
 
   nextPacket_ = av_packet_alloc();
   assert(nextPacket_);
+  bsfPacket_ = av_packet_alloc();
+  assert(bsfPacket_);
 
   BROLL_LOG_INFO(
     "Video Reader: resolution %d x %d",
@@ -98,11 +100,38 @@ VideoReader::~VideoReader()
 
 AVPacket * VideoReader::read_next()
 {
+  if (nextPacket_->data) {
+    av_packet_unref(nextPacket_);
+  }
+  if (bsfPacket_->data) {
+    av_packet_unref(nextPacket_);
+  }
+
+  // Note: I think this would be easier as a coroutine
+  // But for now it's kind of turned inside out
+  // instead of yield bsf_receive_packet inner while loop
+
+  // First, if the bitstream filter already has data, return that before adding more
+  if (bsfCtx_ && av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
+    return bsfPacket_;
+  }
+  // Next, check for a new frame from format
+  // and if enabled send to bsf, else return the new frame
   while (av_read_frame(formatCtx_, nextPacket_) >= 0) {
     if (nextPacket_->stream_index == videoStreamIndex_) {
-      return nextPacket_;
+      if (bsfCtx_) {
+        if (av_bsf_send_packet(bsfCtx_, nextPacket_) < 0) {
+          BROLL_LOG_ERROR("Failed to send packet to bistream filter.");
+          return nullptr;
+        }
+      } else {
+        return nextPacket_;
+      }
     }
-    av_packet_unref(nextPacket_);
+  }
+  // Finally check for bsf packets if data was sent to the bsf just now
+  if (bsfCtx_ && av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
+    return bsfPacket_;
   }
   return nullptr;
 }

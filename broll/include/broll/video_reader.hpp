@@ -50,11 +50,12 @@ public:
   std::string format_name() const;
 
 protected:
+  AVPacket * nextPacket_ = nullptr;
+  AVPacket * bsfPacket_ = nullptr;
   AVFormatContext * formatCtx_ = nullptr;
   const AVBitStreamFilter * bitstreamFilter_ = nullptr;
   AVBSFContext * bsfCtx_ = nullptr;
   AVStream * stream_ = nullptr;
-  AVPacket * nextPacket_ = nullptr;
   AVCodecID codecId_ = AV_CODEC_ID_NONE;
   int videoStreamIndex_ = -1;
   AVCodecParameters * codecParams_ = nullptr;
