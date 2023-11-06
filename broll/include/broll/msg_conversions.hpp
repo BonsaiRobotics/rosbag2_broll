@@ -16,6 +16,7 @@
 #define BROLL__MSG_CONVERSIONS_HPP_
 
 #include <memory>
+#include <string>
 
 extern "C" {
 #include "libavcodec/avcodec.h"
@@ -39,6 +40,9 @@ AVCodecParameters * parameters_from_message(
 /// @param img
 /// @return True if conversion was successful, false otherwise
 bool frame_to_image(const AVFrame & frame, sensor_msgs::msg::Image & img);
+
+AVPixelFormat pixel_format_from_ros_string(const std::string & pix_fmt_str);
+
 
 }  // namespace broll
 

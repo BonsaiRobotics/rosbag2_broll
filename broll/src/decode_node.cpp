@@ -59,11 +59,8 @@ DecodeNode::DecodeNode(const rclcpp::NodeOptions & options)
   std::string pix_fmt_str = declare_parameter("pix_fmt", "bgr8");
   wait_for_codec_params_ = declare_parameter("wait_for_codec_params", false);
 
-  if (pix_fmt_str == "bgr8") {
-    target_pix_fmt_ = AV_PIX_FMT_BGR24;
-  } else if (pix_fmt_str == "rgb8") {
-    target_pix_fmt_ = AV_PIX_FMT_RGB24;
-  } else {
+  target_pix_fmt_ = pixel_format_from_ros_string(pix_fmt_str);
+  if (target_pix_fmt_ == AV_PIX_FMT_NONE) {
     throw std::runtime_error("Unknown pixel format " + pix_fmt_str);
   }
 

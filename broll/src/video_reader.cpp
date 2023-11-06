@@ -83,6 +83,7 @@ VideoReader::VideoReader(
     if (av_bsf_init(bsfCtx_) < 0) {
       throw std::runtime_error("Failed to initialize bitstream filter context");
     }
+    BROLL_LOG_INFO("Bitstream filter %s initialized for format %s", bsf_name, format_name_.c_str());
   }
 
   ts_scale_ = std::chrono::nanoseconds{
@@ -104,7 +105,7 @@ AVPacket * VideoReader::read_next()
     av_packet_unref(nextPacket_);
   }
   if (bsfPacket_->data) {
-    av_packet_unref(nextPacket_);
+    av_packet_unref(bsfPacket_);
   }
 
   // Note: I think this would be easier as a coroutine
@@ -121,9 +122,10 @@ AVPacket * VideoReader::read_next()
     if (nextPacket_->stream_index == videoStreamIndex_) {
       if (bsfCtx_) {
         if (av_bsf_send_packet(bsfCtx_, nextPacket_) < 0) {
-          BROLL_LOG_ERROR("Failed to send packet to bistream filter.");
+          BROLL_LOG_ERROR("Failed to send packet to bitstream filter.");
           return nullptr;
         }
+        break;
       } else {
         return nextPacket_;
       }

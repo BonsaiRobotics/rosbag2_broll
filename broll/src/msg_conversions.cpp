@@ -133,4 +133,14 @@ bool frame_to_image(const AVFrame & in, sensor_msgs::msg::Image & out)
   return true;
 }
 
+AVPixelFormat pixel_format_from_ros_string(const std::string & pix_fmt_str)
+{
+  if (pix_fmt_str == "bgr8") {
+    return AV_PIX_FMT_BGR24;
+  } else if (pix_fmt_str == "rgb8") {
+    return AV_PIX_FMT_RGB24;
+  }
+  return AV_PIX_FMT_NONE;
+}
+
 }  // namespace broll
