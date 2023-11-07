@@ -15,7 +15,6 @@
 #include <optional>
 #include <queue>
 
-#include "avcodec_msgs/msg/video_codec_parameters.hpp"
 #include "broll/frame_decoder.hpp"
 #include "broll/msg_conversions.hpp"
 #include "broll/video_reader.hpp"
@@ -57,7 +56,6 @@ struct BRollStorageConfig
   std::string tf_frame_id = "camera_link";
 
   bool pub_compressed = false;
-  std::string param_topic = "video/codec_params";
   std::string compressed_topic = "video/compressed";
 
   bool pub_decoded = true;
@@ -79,7 +77,6 @@ struct convert<BRollStorageConfig>
 
     optional_assign<bool>(node, "pub_compressed", config.pub_compressed);
     optional_assign<std::string>(node, "compressed_topic", config.compressed_topic);
-    optional_assign<std::string>(node, "param_topic", config.param_topic);
 
     optional_assign<bool>(node, "pub_decoded", config.pub_decoded);
     optional_assign<double>(node, "decoded_scale", config.decoded_scale);
@@ -144,7 +141,6 @@ protected:
   BRollStorageConfig config_;
 
   rclcpp::Logger logger_;
-  bool published_params_ = false;
   std::optional<broll::VideoReader> video_reader_;
   std::optional<broll::FrameDecoder> frame_decoder_;
   AVPacket * next_frame_ = nullptr;
@@ -184,14 +180,8 @@ void BRollStorage::open(
     throw std::runtime_error("");
   }
 
-  video_reader_.emplace(storage_options.uri, true);
-
-  AVCodecParameters * params = avcodec_parameters_alloc();
-  params->codec_type = AVMEDIA_TYPE_VIDEO;
-  params->codec_id = video_reader_->codec_parameters()->codec_id;
-  frame_decoder_.emplace(
-    params, config_.decoded_format, config_.decoded_scale);
-  avcodec_parameters_free(&params);
+  video_reader_.emplace(storage_options.uri);
+  frame_decoder_.emplace(video_reader_->codec_id(), config_.decoded_format, config_.decoded_scale);
 
   metadata_ = rosbag2_storage::BagMetadata{};
   metadata_.bag_size = get_bagfile_size();
@@ -211,11 +201,6 @@ void BRollStorage::open(
         config_.compressed_topic,
         "sensor_msgs/msg/CompressedImage",
         rclcpp::QoS(4)));
-    metadata_.topics_with_message_count.push_back(
-      create_topic_info(
-        config_.param_topic,
-        "avcodec_msgs/msg/VideoCodecParameters",
-        rclcpp::QoS(1).transient_local()));
   }
   if (config_.pub_decoded) {
     metadata_.topics_with_message_count.push_back(

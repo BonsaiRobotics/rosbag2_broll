@@ -22,9 +22,7 @@ static const uint64_t NS_TO_S = 1000000000;
 namespace broll
 {
 
-VideoReader::VideoReader(
-  const std::filesystem::path & videoPath,
-  bool do_annexb)
+VideoReader::VideoReader(const std::filesystem::path & videoPath)
 {
   if (avformat_open_input(&formatCtx_, videoPath.c_str(), nullptr, nullptr) != 0) {
     throw std::runtime_error("Failed to open " + videoPath.string());
@@ -71,20 +69,18 @@ VideoReader::VideoReader(
       throw std::runtime_error("Unsupported codec" + std::to_string(codecId_));
   }
 
-  if (do_annexb) {
-    bitstreamFilter_ = av_bsf_get_by_name(bsf_name);
-    if (!bitstreamFilter_) {
-      throw std::runtime_error("Failed to find bitstream filter " + std::string(bsf_name));
-    }
-    if (av_bsf_alloc(bitstreamFilter_, &bsfCtx_) < 0) {
-      throw std::runtime_error("Failed to allocate bitstream filter context");
-    }
-    bsfCtx_->par_in = codecParams_;
-    if (av_bsf_init(bsfCtx_) < 0) {
-      throw std::runtime_error("Failed to initialize bitstream filter context");
-    }
-    BROLL_LOG_INFO("Bitstream filter %s initialized for format %s", bsf_name, format_name_.c_str());
+  bitstreamFilter_ = av_bsf_get_by_name(bsf_name);
+  if (!bitstreamFilter_) {
+    throw std::runtime_error("Failed to find bitstream filter " + std::string(bsf_name));
   }
+  if (av_bsf_alloc(bitstreamFilter_, &bsfCtx_) < 0) {
+    throw std::runtime_error("Failed to allocate bitstream filter context");
+  }
+  bsfCtx_->par_in = codecParams_;
+  if (av_bsf_init(bsfCtx_) < 0) {
+    throw std::runtime_error("Failed to initialize bitstream filter context");
+  }
+  BROLL_LOG_INFO("Bitstream filter %s initialized for format %s", bsf_name, format_name_.c_str());
 
   ts_scale_ = std::chrono::nanoseconds{
     static_cast<uint64_t>(stream_->time_base.num * NS_TO_S / stream_->time_base.den)};
@@ -113,39 +109,30 @@ AVPacket * VideoReader::read_next()
   // instead of yield bsf_receive_packet inner while loop
 
   // First, if the bitstream filter already has data, return that before adding more
-  if (bsfCtx_ && av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
+  if (av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
     return bsfPacket_;
   }
   // Next, check for a new frame from format
   // and if enabled send to bsf, else return the new frame
   while (av_read_frame(formatCtx_, nextPacket_) >= 0) {
     if (nextPacket_->stream_index == videoStreamIndex_) {
-      if (bsfCtx_) {
-        if (av_bsf_send_packet(bsfCtx_, nextPacket_) < 0) {
-          BROLL_LOG_ERROR("Failed to send packet to bitstream filter.");
-          return nullptr;
-        }
-        break;
-      } else {
-        return nextPacket_;
+      if (av_bsf_send_packet(bsfCtx_, nextPacket_) < 0) {
+        BROLL_LOG_ERROR("Failed to send packet to bitstream filter.");
+        return nullptr;
       }
+      break;
     }
   }
   // Finally check for bsf packets if data was sent to the bsf just now
-  if (bsfCtx_ && av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
+  if (av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
     return bsfPacket_;
   }
   return nullptr;
 }
 
-const AVCodecParameters * VideoReader::codec_parameters() const
+AVCodecID VideoReader::codec_id() const
 {
-  return codecParams_;
-}
-
-avcodec_msgs::msg::VideoCodecParameters VideoReader::codec_parameters_msg() const
-{
-  return message_from_parameters(codecParams_);
+  return codecParams_->codec_id;
 }
 
 std::chrono::nanoseconds VideoReader::ts_scale() const

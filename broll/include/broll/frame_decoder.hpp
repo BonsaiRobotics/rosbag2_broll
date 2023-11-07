@@ -32,12 +32,12 @@ class FrameDecoder
 {
 public:
   /// @brief Constructor
-  /// @param params Codec parameters to initialize the decoder
+  /// @param codec_id ID of the codec to initialize the video decoder
   /// @param target_fmt Pixel format to convert to, if necessary.
   ///   AV_PIX_FMT_NONE guarantees no conversion.
   /// @param scale Scale applied to image dimensions (by multiplication, 0.5 is half size)
   FrameDecoder(
-    const AVCodecParameters * params,
+    AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
     double scale = 1.0f);
   virtual ~FrameDecoder();
@@ -63,6 +63,7 @@ protected:
   SwsContext * swsCtx_ = nullptr;
   AVFrame * decodedFrame_ = nullptr;
   AVFrame * convertedFrame_ = nullptr;
+
   float scale_ = 1.0f;
   uint scaled_width_ = 0u;
   uint scaled_height_ = 0u;

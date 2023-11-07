@@ -25,25 +25,20 @@ extern "C" {
 #include <filesystem>
 #include <string>
 
-#include "avcodec_msgs/msg/video_codec_parameters.hpp"
-
 namespace broll
 {
 
 class VideoReader
 {
 public:
-  explicit VideoReader(
-    const std::filesystem::path & videoFilename,
-    bool do_annexb = false);
+  explicit VideoReader(const std::filesystem::path & videoFilename);
   virtual ~VideoReader();
 
   // Core API
   AVPacket * read_next();
 
   // Information accessors
-  avcodec_msgs::msg::VideoCodecParameters codec_parameters_msg() const;
-  const AVCodecParameters * codec_parameters() const;
+  AVCodecID codec_id() const;
   std::chrono::nanoseconds ts_scale() const;
   std::chrono::nanoseconds duration() const;
   uint64_t frame_count() const;

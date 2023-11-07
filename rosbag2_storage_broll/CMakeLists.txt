@@ -12,7 +12,6 @@ elseif("$ENV{ROS_DISTRO}" STREQUAL "rolling")
 endif()
 
 # find dependencies
-find_package(avcodec_msgs REQUIRED)
 find_package(broll REQUIRED)
 find_package(ament_cmake REQUIRED)
 find_package(rosbag2_storage REQUIRED)
@@ -49,7 +48,6 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
   rclcpp::rclcpp
   rosbag2_storage::rosbag2_storage
   rosbag2_transport::rosbag2_transport
-  ${avcodec_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
 )
 pluginlib_export_plugin_description_file(rosbag2_storage rosbag2_storage_plugin.xml)

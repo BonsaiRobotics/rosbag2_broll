@@ -19,7 +19,6 @@
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
-#include "avcodec_msgs/msg/video_codec_parameters.hpp"
 #include "broll/frame_decoder.hpp"
 #include "broll/msg_conversions.hpp"
 
@@ -33,11 +32,9 @@ public:
   virtual ~DecodeNode();
 
   void decode_and_republish(const sensor_msgs::msg::CompressedImage::SharedPtr msg);
-  void on_codec_params(const avcodec_msgs::msg::VideoCodecParameters::SharedPtr msg);
 
 protected:
   rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr in_sub_;
-  rclcpp::Subscription<avcodec_msgs::msg::VideoCodecParameters>::SharedPtr param_sub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr out_pub_;
 
   std::optional<FrameDecoder> frame_decoder_;
@@ -46,7 +43,6 @@ protected:
   // Node params
   double scale_;
   AVPixelFormat target_pix_fmt_;
-  bool wait_for_codec_params_ = false;
 };
 
 DecodeNode::DecodeNode(const rclcpp::NodeOptions & options)
@@ -54,10 +50,8 @@ DecodeNode::DecodeNode(const rclcpp::NodeOptions & options)
 {
   const std::string in_topic = "video/compressed";
   const std::string out_topic = "video/raw";
-  const std::string codec_params_topic = "video/codec_params";
   scale_ = declare_parameter("scale", 1.0);
   std::string pix_fmt_str = declare_parameter("pix_fmt", "bgr8");
-  wait_for_codec_params_ = declare_parameter("wait_for_codec_params", false);
 
   target_pix_fmt_ = pixel_format_from_ros_string(pix_fmt_str);
   if (target_pix_fmt_ == AV_PIX_FMT_NONE) {
@@ -69,13 +63,6 @@ DecodeNode::DecodeNode(const rclcpp::NodeOptions & options)
     rclcpp::SensorDataQoS(),
     std::bind(&DecodeNode::decode_and_republish, this, std::placeholders::_1));
 
-  rclcpp::QoS param_qos{1};
-  param_qos.transient_local();
-  param_sub_ = create_subscription<avcodec_msgs::msg::VideoCodecParameters>(
-    codec_params_topic,
-    param_qos,
-    std::bind(&DecodeNode::on_codec_params, this, std::placeholders::_1));
-
   out_pub_ = create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 }
 
@@ -84,39 +71,20 @@ DecodeNode::~DecodeNode()
 }
 
 
-void DecodeNode::on_codec_params(const avcodec_msgs::msg::VideoCodecParameters::SharedPtr msg)
-{
-  if (frame_decoder_) {
-    return;
-  }
-
-  RCLCPP_INFO(get_logger(), "Got codec params, initializing decoder");
-  auto params = broll::parameters_from_message(*msg);
-  frame_decoder_.emplace(params, target_pix_fmt_, scale_);
-  avcodec_parameters_free(&params);
-}
-
 void DecodeNode::decode_and_republish(const sensor_msgs::msg::CompressedImage::SharedPtr msg)
 {
   if (!frame_decoder_) {
-    if (wait_for_codec_params_) {
-      RCLCPP_INFO_ONCE(get_logger(), "Received first message, waiting for codec params");
-      return;
-    }
-    AVCodecParameters * params = avcodec_parameters_alloc();
-    params->codec_type = AVMEDIA_TYPE_VIDEO;
+    AVCodecID codec_id = AV_CODEC_ID_NONE;
     RCLCPP_INFO(get_logger(), "Initializing decoder on first msg");
     if (msg->format == "h264") {
-      params->codec_id = AV_CODEC_ID_H264;
+      codec_id = AV_CODEC_ID_H264;
     } else if (msg->format == "h265") {
-      params->codec_id = AV_CODEC_ID_H265;
+      codec_id = AV_CODEC_ID_HEVC;
     } else {
       RCLCPP_ERROR(get_logger(), "Unknown codec %s", msg->format.c_str());
       return;
     }
-
-    frame_decoder_.emplace(params, target_pix_fmt_, scale_);
-    avcodec_parameters_free(&params);
+    frame_decoder_.emplace(codec_id, target_pix_fmt_, scale_);
   }
 
   RCLCPP_INFO_ONCE(get_logger(), "Processing first image");

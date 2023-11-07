@@ -53,13 +53,16 @@ namespace broll
 {
 
 FrameDecoder::FrameDecoder(
-  const AVCodecParameters * params,
+  AVCodecID codec_id,
   AVPixelFormat target_fmt,
   double scale)
 : targetPixFmt_(target_fmt),
   scale_(scale)
 {
+  AVCodecParameters * params = avcodec_parameters_alloc();
   assert(params);
+  params->codec_type = AVMEDIA_TYPE_VIDEO;
+  params->codec_id = codec_id;
 
   packet_ = av_packet_alloc();
   assert(packet_ && "failed to alloc packet");
@@ -86,6 +89,7 @@ FrameDecoder::FrameDecoder(
 
   decodedFrame_ = av_frame_alloc();
   assert(decodedFrame_ && "failed to alloc decodedFrame");
+  avcodec_parameters_free(&params);
 }
 
 FrameDecoder::~FrameDecoder()
