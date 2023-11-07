@@ -15,7 +15,6 @@
 #ifndef BROLL__MSG_CONVERSIONS_HPP_
 #define BROLL__MSG_CONVERSIONS_HPP_
 
-#include <memory>
 #include <string>
 
 extern "C" {

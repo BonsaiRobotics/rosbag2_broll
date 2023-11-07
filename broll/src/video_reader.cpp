@@ -88,10 +88,16 @@ VideoReader::VideoReader(const std::filesystem::path & videoPath)
 
 VideoReader::~VideoReader()
 {
-  if (nextPacket_) {
+  if (nextPacket_->data) {
     av_packet_unref(nextPacket_);
-    av_packet_free(&nextPacket_);
   }
+  av_packet_free(&nextPacket_);
+
+  if (bsfPacket_->data) {
+    av_packet_unref(&bsfPacket_);
+  }
+  av_packet_free(bsfPacket_);
+
   avformat_close_input(&formatCtx_);
 }
 
@@ -103,10 +109,6 @@ AVPacket * VideoReader::read_next()
   if (bsfPacket_->data) {
     av_packet_unref(bsfPacket_);
   }
-
-  // Note: I think this would be easier as a coroutine
-  // But for now it's kind of turned inside out
-  // instead of yield bsf_receive_packet inner while loop
 
   // First, if the bitstream filter already has data, return that before adding more
   if (av_bsf_receive_packet(bsfCtx_, bsfPacket_) >= 0) {
