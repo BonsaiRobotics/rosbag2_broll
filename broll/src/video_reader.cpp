@@ -94,9 +94,9 @@ VideoReader::~VideoReader()
   av_packet_free(&nextPacket_);
 
   if (bsfPacket_->data) {
-    av_packet_unref(&bsfPacket_);
+    av_packet_unref(bsfPacket_);
   }
-  av_packet_free(bsfPacket_);
+  av_packet_free(&bsfPacket_);
 
   avformat_close_input(&formatCtx_);
 }
