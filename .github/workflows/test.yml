@@ -8,6 +8,8 @@ on:
 jobs:
   build_and_test:
     runs-on: ubuntu-latest
+    env:
+      ROS_DISTRO: ${{ matrix.ros_distro }}
     container:
       image: rostooling/setup-ros-docker:ubuntu-jammy-latest
     strategy:
