@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-          ros_distro: [humble, rolling]
+          ros_distro: [humble, iron, rolling]
     steps:
     - name: Build and run tests
       id: action-ros-ci
