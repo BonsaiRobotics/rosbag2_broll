@@ -15,7 +15,6 @@
 #include <optional>
 #include <queue>
 
-#include "avcodec_msgs/msg/video_codec_parameters.hpp"
 #include "broll/frame_decoder.hpp"
 #include "broll/msg_conversions.hpp"
 #include "broll/video_reader.hpp"
@@ -57,7 +56,6 @@ struct BRollStorageConfig
   std::string tf_frame_id = "camera_link";
 
   bool pub_compressed = false;
-  std::string param_topic = "video/codec_params";
   std::string compressed_topic = "video/compressed";
 
   bool pub_decoded = true;
@@ -79,12 +77,18 @@ struct convert<BRollStorageConfig>
 
     optional_assign<bool>(node, "pub_compressed", config.pub_compressed);
     optional_assign<std::string>(node, "compressed_topic", config.compressed_topic);
-    optional_assign<std::string>(node, "param_topic", config.param_topic);
 
     optional_assign<bool>(node, "pub_decoded", config.pub_decoded);
     optional_assign<double>(node, "decoded_scale", config.decoded_scale);
     optional_assign<std::string>(node, "decoded_topic", config.decoded_topic);
-    // TODO(emersonknapp) pixel format
+
+    std::string decoded_format_str = "bgr8";
+    optional_assign<std::string>(node, "pix_fmt", decoded_format_str);
+    config.decoded_format = broll::pixel_format_from_ros_string(decoded_format_str);
+    if (config.decoded_format == AV_PIX_FMT_NONE) {
+      throw std::runtime_error("Unknown pixel format " + decoded_format_str);
+    }
+
     return true;
   }
 };
@@ -129,16 +133,17 @@ public:
 
 protected:
   rosbag2_storage::BagMetadata metadata_{};
-  std::optional<broll::VideoReader> video_reader_;
-  std::optional<broll::FrameDecoder> frame_decoder_;
+
+  // Configs
   rosbag2_storage::StorageOptions options_;
   rosbag2_storage::storage_interfaces::IOFlag io_flag_;
   rosbag2_storage::StorageFilter filter_;
-  rclcpp::Logger logger_;
-  bool published_params_ = false;
-  std::queue<std::shared_ptr<rosbag2_storage::SerializedBagMessage>> deferred_next_;
-
   BRollStorageConfig config_;
+
+  rclcpp::Logger logger_;
+  std::optional<broll::VideoReader> video_reader_;
+  std::optional<broll::FrameDecoder> frame_decoder_;
+  AVPacket * next_frame_ = nullptr;
 };
 
 
@@ -176,8 +181,7 @@ void BRollStorage::open(
   }
 
   video_reader_.emplace(storage_options.uri);
-  frame_decoder_.emplace(
-    video_reader_->codec_parameters(), config_.decoded_format, config_.decoded_scale);
+  frame_decoder_.emplace(video_reader_->codec_id(), config_.decoded_format, config_.decoded_scale);
 
   metadata_ = rosbag2_storage::BagMetadata{};
   metadata_.bag_size = get_bagfile_size();
@@ -197,11 +201,6 @@ void BRollStorage::open(
         config_.compressed_topic,
         "sensor_msgs/msg/CompressedImage",
         rclcpp::QoS(4)));
-    metadata_.topics_with_message_count.push_back(
-      create_topic_info(
-        config_.param_topic,
-        "avcodec_msgs/msg/VideoCodecParameters",
-        rclcpp::QoS(1).transient_local()));
   }
   if (config_.pub_decoded) {
     metadata_.topics_with_message_count.push_back(
@@ -235,24 +234,32 @@ std::string BRollStorage::get_storage_identifier() const
 bool BRollStorage::has_next()
 {
   // TODO(emersonknapp) topic_filter
-  return video_reader_->has_next();
+  if (next_frame_) {
+    return true;
+  }
+  next_frame_ = video_reader_->read_next();
+  return next_frame_ != nullptr;
 }
 
 std::shared_ptr<rosbag2_storage::SerializedBagMessage> BRollStorage::read_next()
 {
   rclcpp::Time starting_time = rclcpp::Time{0};  // TODO(emersonknapp) starting time offset
   // TODO(emersonknapp) topic_filter
-  if (config_.pub_compressed && !published_params_) {
-    published_params_ = true;
-    return serialize_msg(video_reader_->codec_parameters_msg(), config_.param_topic, starting_time);
-  }
 
-  AVPacket * packet = video_reader_->read_next();
+  if (!next_frame_) {
+    next_frame_ = video_reader_->read_next();
+    if (!next_frame_) {
+      return nullptr;
+    }
+  }
+  AVPacket * packet = next_frame_;
+
   rclcpp::Time ts =
     starting_time +
     rclcpp::Duration::from_nanoseconds(packet->pts * video_reader_->ts_scale().count());
   auto tsd = rclcpp::Duration::from_nanoseconds(ts.nanoseconds());
 
+  std::shared_ptr<rosbag2_storage::SerializedBagMessage> ret = nullptr;
   if (config_.pub_compressed) {
     // TODO(emersonknapp) use preallocated pools to avoid dynamic alloc
     sensor_msgs::msg::CompressedImage ci_msg;
@@ -261,23 +268,26 @@ std::shared_ptr<rosbag2_storage::SerializedBagMessage> BRollStorage::read_next()
     ci_msg.format = video_reader_->format_name();
     ci_msg.data.resize(packet->size);
     memcpy(&ci_msg.data[0], packet->data, packet->size);
-    return serialize_msg(ci_msg, config_.compressed_topic, ts);
-  }
-  if (config_.pub_decoded) {
+    ret = serialize_msg(ci_msg, config_.compressed_topic, ts);
+  } else if (config_.pub_decoded) {
     // TODO(emersonknapp) use preallocated pools to avoid dynamic alloc
     sensor_msgs::msg::Image image_msg;
     frame_decoder_->decode(*packet, image_msg);
     image_msg.header.stamp = ts;
     image_msg.header.frame_id = config_.tf_frame_id;
-    return serialize_msg(image_msg, config_.decoded_topic, ts);
+    ret = serialize_msg(image_msg, config_.decoded_topic, ts);
   }
-  return nullptr;
+  next_frame_ = nullptr;
+  return ret;
 }
 
 std::vector<rosbag2_storage::TopicMetadata> BRollStorage::get_all_topics_and_types()
 {
-  throw std::runtime_error("BRollStorage::get_all_topics_and_types not implemented");
-  return {};
+  std::vector<rosbag2_storage::TopicMetadata> topics;
+  for (const auto & topic_info : metadata_.topics_with_message_count) {
+    topics.push_back(topic_info.topic_metadata);
+  }
+  return topics;
 }
 
 #ifdef ROS2_IRON

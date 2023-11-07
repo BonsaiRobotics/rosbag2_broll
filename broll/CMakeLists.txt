@@ -7,7 +7,6 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_ros REQUIRED)
-find_package(avcodec_msgs REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -40,7 +39,6 @@ target_link_libraries(broll PUBLIC
   avutil
   swscale
   rcutils::rcutils
-  ${avcodec_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
 )
 
@@ -55,7 +53,6 @@ target_link_libraries(decode_node_component PUBLIC
   broll
   rclcpp::rclcpp
   rclcpp_components::component
-  ${avcodec_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
 )
 rclcpp_components_register_node(decode_node_component
@@ -82,9 +79,6 @@ endif()
 
 ament_export_include_directories(
   "include/${PROJECT_NAME}"
-)
-ament_export_dependencies(
-  avcodec_msgs
 )
 ament_export_libraries(
   broll

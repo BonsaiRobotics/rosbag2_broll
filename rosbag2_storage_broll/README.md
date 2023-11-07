@@ -20,7 +20,6 @@ Rosbag2 allows passing arbitrary configuration to a storage plugin via the `--st
 ```
 ns: optional<string>  # namespace for published topics, must end with a /, default "video/"
 compressed_topic: optional<string>  # compressed frame topic, default "compressed"
-param_topic: optional<string>  # topic to publish AVCodecParameters, default "codec_params"
 frame_id: optional<string>  # tf frame ID to apply to message headers
 ```
 

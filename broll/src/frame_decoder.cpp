@@ -18,6 +18,7 @@ extern "C" {
 }
 
 #include "broll/frame_decoder.hpp"
+#include "broll/msg_conversions.hpp"
 #include "sensor_msgs/image_encodings.hpp"
 
 #include "logging.hpp"
@@ -52,14 +53,19 @@ namespace broll
 {
 
 FrameDecoder::FrameDecoder(
-  AVCodecParameters * params,
+  AVCodecID codec_id,
   AVPixelFormat target_fmt,
   double scale)
 : targetPixFmt_(target_fmt),
-  scale_(scale),
-  packet_(av_packet_alloc())
+  scale_(scale)
 {
+  AVCodecParameters * params = avcodec_parameters_alloc();
   assert(params);
+  params->codec_type = AVMEDIA_TYPE_VIDEO;
+  params->codec_id = codec_id;
+
+  packet_ = av_packet_alloc();
+  assert(packet_ && "failed to alloc packet");
 
   codec_ = avcodec_find_decoder(params->codec_id);
   if (!codec_) {
@@ -80,30 +86,10 @@ FrameDecoder::FrameDecoder(
   if (avcodec_open2(codecCtx_, codec_, nullptr) < 0) {
     assert(false && "failed to open codec through avcodec_open2");
   }
-  const int width = codecCtx_->width;
-  const int height = codecCtx_->height;
 
-  // Round up to nearest multiple of 2
-  scaled_width_ = width * scale_;
-  scaled_width_ += (scaled_width_ % 2);
-  scaled_height_ = height * scale_;
-  scaled_height_ += (scaled_height_ % 2);
-
-  BROLL_LOG_INFO(
-    "Frame Decoder: resolution in %d x %d, resolution out %d x %d",
-    width, height, scaled_width_, scaled_height_);
-  BROLL_LOG_INFO("\tCodec %s ID %d bit_rate %ld", codec_->name, codec_->id, params->bit_rate);
-
-  decodedFrame_ = allocPicture(codecCtx_->pix_fmt, width, height);
+  decodedFrame_ = av_frame_alloc();
   assert(decodedFrame_ && "failed to alloc decodedFrame");
-  convertedFrame_ = allocPicture(targetPixFmt_, scaled_width_, scaled_height_);
-  assert(convertedFrame_ && "failed to alloc convertedFrame");
-
-  swsCtx_ = sws_getContext(
-    width, height, codecCtx_->pix_fmt,
-    scaled_width_, scaled_height_, targetPixFmt_,
-    0, nullptr, nullptr, nullptr);
-  assert(swsCtx_ && "Failed to created sws context for conversion.");
+  avcodec_parameters_free(&params);
 }
 
 FrameDecoder::~FrameDecoder()
@@ -115,13 +101,11 @@ FrameDecoder::~FrameDecoder()
   if (convertedFrame_) {
     av_frame_free(&convertedFrame_);
   }
-  if (swsCtx_) {
-    sws_freeContext(swsCtx_);
-  }
+  sws_freeContext(swsCtx_);
   av_packet_free(&packet_);
 }
 
-bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out, bool dbg_print)
+bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 {
   int response = avcodec_send_packet(codecCtx_, &packet_in);
   if (response < 0) {
@@ -141,66 +125,22 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out, 
     assert(false && "Error while receiving a frame from the decoder");
     return false;
   }
-  if (response >= 0) {
-    if (dbg_print) {
-      BROLL_LOG_INFO(
-        "Frame %d (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %d]",
-        codecCtx_->frame_number,
-        av_get_picture_type_char(frame_out.pict_type),
-        frame_out.pkt_size,
-        frame_out.format,
-        frame_out.pts,
-        frame_out.key_frame,
-        frame_out.coded_picture_number
-      );
-    }
-    return true;
-  }
-  return false;
-}
-
-bool FrameDecoder::convertToImage(const AVFrame & in, sensor_msgs::msg::Image & out)
-{
-  const int align_size = 16;
-
-  out.height = in.height;
-  out.width = in.width;
-  out.is_bigendian = false;
-
-  switch (in.format) {
-    case AV_PIX_FMT_RGB24:
-      out.encoding = "rgb8";
-      break;
-    case AV_PIX_FMT_BGR24:
-      out.encoding = "bgr8";
-      break;
-    default: {
-        int fourcc = avcodec_pix_fmt_to_codec_tag((AVPixelFormat)in.format);
-        out.encoding.resize(4);
-        for (int i = 0; i < 4; i++) {
-          out.encoding[i] = 0xFF & (fourcc >> (i * 8));
-        }
-      } break;
+  if (response < 0) {
+    return false;
   }
 
-  int data_size = av_image_get_buffer_size(
-    (AVPixelFormat)in.format,
-    in.width,
-    in.height,
-    align_size);
-  assert(data_size > 0);
-  out.step = data_size / out.height;
-
-  out.data.resize(data_size);
-  av_image_copy_to_buffer(
-    &out.data[0],
-    data_size,
-    in.data,
-    in.linesize,
-    (AVPixelFormat)in.format,
-    in.width,
-    in.height,
-    align_size);
+  if (dbg_print_) {
+    BROLL_LOG_INFO(
+      "Frame %d (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %d]",
+      codecCtx_->frame_number,
+      av_get_picture_type_char(frame_out.pict_type),
+      frame_out.pkt_size,
+      frame_out.format,
+      frame_out.pts,
+      frame_out.key_frame,
+      frame_out.coded_picture_number
+    );
+  }
   return true;
 }
 
@@ -218,19 +158,42 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
       consecutive_receive_failures_);
     consecutive_receive_failures_ = 0;
   }
-  AVFrame * finalFrame = decodedFrame_;
-  if (swsCtx_) {
-    sws_scale(
-      swsCtx_,
-      decodedFrame_->data, decodedFrame_->linesize, 0, decodedFrame_->height,
-      convertedFrame_->data, convertedFrame_->linesize);
-    finalFrame = convertedFrame_;
+
+  if (!convertedFrame_) {
+    // Initialize decoded frame and sws context on first decode
+
+    int width = decodedFrame_->width;
+    int height = decodedFrame_->height;
+    // Round up to nearest multiple of 2
+    scaled_width_ = width * scale_;
+    scaled_width_ += (scaled_width_ % 2);
+    scaled_height_ = height * scale_;
+    scaled_height_ += (scaled_height_ % 2);
+
+    BROLL_LOG_INFO(
+      "Frame Decoder initialized: resolution in %d x %d, resolution out %d x %d",
+      width, height, scaled_width_, scaled_height_);
+    BROLL_LOG_INFO("\tCodec %s ID %d", codec_->name, codec_->id);
+
+    convertedFrame_ = allocPicture(targetPixFmt_, scaled_width_, scaled_height_);
+    assert(convertedFrame_ && "failed to alloc convertedFrame");
+
+    swsCtx_ = sws_getContext(
+      width, height, codecCtx_->pix_fmt,
+      scaled_width_, scaled_height_, targetPixFmt_,
+      0, nullptr, nullptr, nullptr);
+    assert(swsCtx_ && "Failed to created sws context for conversion.");
   }
-  if (!convertToImage(*finalFrame, out)) {
+
+  sws_scale(
+    swsCtx_,
+    decodedFrame_->data, decodedFrame_->linesize, 0, decodedFrame_->height,
+    convertedFrame_->data, convertedFrame_->linesize);
+
+  if (!frame_to_image(*convertedFrame_, out)) {
     BROLL_LOG_ERROR("Failed to convert frame to img");
     return false;
   }
-
   return true;
 }
 
@@ -238,6 +201,8 @@ bool FrameDecoder::decode(
   const sensor_msgs::msg::CompressedImage & in,
   sensor_msgs::msg::Image & out)
 {
+  packet_->pts = AV_NOPTS_VALUE;
+  packet_->dts = AV_NOPTS_VALUE;
   packet_->size = in.data.size();
   // Packet is only used as const in the decode call
   packet_->data = const_cast<uint8_t *>(&in.data[0]);

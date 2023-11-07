@@ -16,22 +16,28 @@
 #define BROLL__MSG_CONVERSIONS_HPP_
 
 #include <memory>
+#include <string>
 
 extern "C" {
 #include "libavcodec/avcodec.h"
 }
 
-#include "avcodec_msgs/msg/video_codec_parameters.hpp"
+#include "sensor_msgs/msg/image.hpp"
 
 namespace broll
 {
 
-avcodec_msgs::msg::VideoCodecParameters message_from_parameters(
-  const AVCodecParameters * p);
+/// @brief Converts a decoded AVFrame to a sensor_msgs::msg::Image
+/// @param frame
+/// @param img
+/// @return True if conversion was successful, false otherwise
+bool frame_to_image(const AVFrame & frame, sensor_msgs::msg::Image & img);
 
-// Note: caller gains ownership of the created object, and must later call avcodec_parameters_free
-AVCodecParameters * parameters_from_message(
-  const avcodec_msgs::msg::VideoCodecParameters & m);
+/// @brief Convert a ROS pixel format string to equivalent AVPixelFormat
+/// @param pix_fmt_str see sensor_msgs::image_encodings for valid strings
+/// @return AV_PIX_FMT_NONE if no equivalent format was found
+AVPixelFormat pixel_format_from_ros_string(const std::string & pix_fmt_str);
+
 
 }  // namespace broll
 

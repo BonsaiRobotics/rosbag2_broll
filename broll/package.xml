@@ -9,7 +9,6 @@
 
   <buildtool_depend>ament_cmake_ros</buildtool_depend>
 
-  <depend>avcodec_msgs</depend>
   <depend>ffmpeg</depend>
   <depend>rcutils</depend>
   <depend>rclcpp</depend>

@@ -9,7 +9,6 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>avcodec_msgs</depend>
   <depend>broll</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>

@@ -32,17 +32,17 @@ class FrameDecoder
 {
 public:
   /// @brief Constructor
-  /// @param params Codec parameters to initialize the decoder
+  /// @param codec_id ID of the codec to initialize the video decoder
   /// @param target_fmt Pixel format to convert to, if necessary.
   ///   AV_PIX_FMT_NONE guarantees no conversion.
   /// @param scale Scale applied to image dimensions (by multiplication, 0.5 is half size)
   FrameDecoder(
-    AVCodecParameters * params,
+    AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
     double scale = 1.0f);
   virtual ~FrameDecoder();
 
-  /// @brief Decode a compressed image message into an image message
+  /// @brief Decode a compressed image packet into an image message
   /// @note This method does not set the header (timestamp, tf frame) of the output image
   bool decode(const AVPacket & in, sensor_msgs::msg::Image & out);
 
@@ -53,22 +53,22 @@ public:
   /// @return True if decoding was successful, false otherwise
   bool decode(const sensor_msgs::msg::CompressedImage & in, sensor_msgs::msg::Image & out);
 
-  static bool convertToImage(const AVFrame & frame_in, sensor_msgs::msg::Image & img_out);
-
 protected:
-  bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out, bool dbg_print = false);
+  bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out);
 
+  AVPacket * packet_ = nullptr;
   AVCodec * codec_ = nullptr;
   AVCodecContext * codecCtx_ = nullptr;
   AVPixelFormat targetPixFmt_ = AV_PIX_FMT_NONE;
   SwsContext * swsCtx_ = nullptr;
   AVFrame * decodedFrame_ = nullptr;
   AVFrame * convertedFrame_ = nullptr;
+
   float scale_ = 1.0f;
   uint scaled_width_ = 0u;
   uint scaled_height_ = 0u;
   uint consecutive_receive_failures_ = 0;
-  AVPacket * packet_ = nullptr;
+  bool dbg_print_ = false;
 };
 
 }  // namespace broll

@@ -17,14 +17,13 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 }
 
 #include <filesystem>
 #include <string>
-
-#include "avcodec_msgs/msg/video_codec_parameters.hpp"
 
 namespace broll
 {
@@ -36,21 +35,22 @@ public:
   virtual ~VideoReader();
 
   // Core API
-  bool has_next();
   AVPacket * read_next();
 
   // Information accessors
-  avcodec_msgs::msg::VideoCodecParameters codec_parameters_msg() const;
-  AVCodecParameters * codec_parameters() const;
+  AVCodecID codec_id() const;
   std::chrono::nanoseconds ts_scale() const;
   std::chrono::nanoseconds duration() const;
   uint64_t frame_count() const;
   std::string format_name() const;
 
 protected:
-  AVFormatContext * formatCtx_ = nullptr;
-  AVStream * stream_ = nullptr;
   AVPacket * nextPacket_ = nullptr;
+  AVPacket * bsfPacket_ = nullptr;
+  AVFormatContext * formatCtx_ = nullptr;
+  const AVBitStreamFilter * bitstreamFilter_ = nullptr;
+  AVBSFContext * bsfCtx_ = nullptr;
+  AVStream * stream_ = nullptr;
   AVCodecID codecId_ = AV_CODEC_ID_NONE;
   int videoStreamIndex_ = -1;
   AVCodecParameters * codecParams_ = nullptr;
