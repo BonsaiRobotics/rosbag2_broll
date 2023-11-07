@@ -70,7 +70,6 @@ DecodeNode::~DecodeNode()
 {
 }
 
-
 void DecodeNode::decode_and_republish(const sensor_msgs::msg::CompressedImage::SharedPtr msg)
 {
   if (!frame_decoder_) {
@@ -79,6 +78,8 @@ void DecodeNode::decode_and_republish(const sensor_msgs::msg::CompressedImage::S
     if (msg->format == "h264") {
       codec_id = AV_CODEC_ID_H264;
     } else if (msg->format == "h265") {
+      codec_id = AV_CODEC_ID_HEVC;
+    } else if (msg->format == "hevc") {
       codec_id = AV_CODEC_ID_HEVC;
     } else {
       RCLCPP_ERROR(get_logger(), "Unknown codec %s", msg->format.c_str());
