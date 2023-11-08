@@ -75,14 +75,9 @@ void DecodeNode::decode_and_republish(const sensor_msgs::msg::CompressedImage::S
   if (!frame_decoder_) {
     AVCodecID codec_id = AV_CODEC_ID_NONE;
     RCLCPP_INFO(get_logger(), "Initializing decoder on first msg");
-    if (msg->format == "h264") {
-      codec_id = AV_CODEC_ID_H264;
-    } else if (msg->format == "h265") {
-      codec_id = AV_CODEC_ID_HEVC;
-    } else if (msg->format == "hevc") {
-      codec_id = AV_CODEC_ID_HEVC;
-    } else {
-      RCLCPP_ERROR(get_logger(), "Unknown codec %s", msg->format.c_str());
+    codec_id = codec_id_from_name(msg->format);
+    if (codec_id == AV_CODEC_ID_NONE) {
+      RCLCPP_ERROR_STREAM(get_logger(), "Unknown codec " << msg->format);
       return;
     }
     frame_decoder_.emplace(codec_id, target_pix_fmt_, scale_);

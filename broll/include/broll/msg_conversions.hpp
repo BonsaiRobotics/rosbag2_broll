@@ -37,6 +37,10 @@ bool frame_to_image(const AVFrame & frame, sensor_msgs::msg::Image & img);
 /// @return AV_PIX_FMT_NONE if no equivalent format was found
 AVPixelFormat pixel_format_from_ros_string(const std::string & pix_fmt_str);
 
+/// @brief Convert a ROS CompressedImage::format string to equivalent AVCodecID
+/// @param codec_id_str
+/// @return
+AVCodecID codec_id_from_name(const std::string & codec_name);
 
 }  // namespace broll
 

@@ -81,4 +81,13 @@ AVPixelFormat pixel_format_from_ros_string(const std::string & pix_fmt_str)
   return AV_PIX_FMT_NONE;
 }
 
+AVCodecID codec_id_from_name(const std::string & codec_name)
+{
+  const AVCodecDescriptor * desc = avcodec_descriptor_get_by_name(codec_name.c_str());
+  if (desc) {
+    return desc->id;
+  }
+  return AV_CODEC_ID_NONE;
+}
+
 }  // namespace broll
