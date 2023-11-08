@@ -56,13 +56,12 @@ VideoReader::VideoReader(const std::filesystem::path & videoPath)
     codecParams_->codec_id, codecParams_->bit_rate);
 
   const char * bsf_name = nullptr;
+  format_name_ = avcodec_get_name(codecId_);
   switch (codecId_) {
     case AV_CODEC_ID_HEVC:
-      format_name_ = "hevc";
       bsf_name = "hevc_mp4toannexb";
       break;
     case AV_CODEC_ID_H264:
-      format_name_ = "h264";
       bsf_name = "h264_mp4toannexb";
       break;
     default:
