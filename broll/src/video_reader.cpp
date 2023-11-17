@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fstream>
+
 #include "broll/msg_conversions.hpp"
 #include "broll/video_reader.hpp"
 
@@ -24,6 +26,18 @@ namespace broll
 
 VideoReader::VideoReader(const std::filesystem::path & videoPath)
 {
+  {
+    // Note(emersonknapp) this is a little kludgy, but we just want to hard-disable opening an
+    // MCAP file, this will say it's opened successfully but then fail to read anything
+    const char mcap_header[] = "\x89MCAP\x30\r\n";
+    char buf[sizeof(mcap_header)];
+    std::fstream file(videoPath, std::ios::in | std::ios::binary);
+    file.read(buf, sizeof(mcap_header));
+    if (memcmp(buf, mcap_header, sizeof(mcap_header) - 1) == 0) {
+      throw std::runtime_error("MCAP files are not supported by broll::VideoReader");
+    }
+  }
+
   if (avformat_open_input(&formatCtx_, videoPath.c_str(), nullptr, nullptr) != 0) {
     throw std::runtime_error("Failed to open " + videoPath.string());
   }
