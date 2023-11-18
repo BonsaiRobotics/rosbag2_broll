@@ -79,7 +79,7 @@ struct convert<BRollStorageConfig>
     optional_assign<std::string>(node, "compressed_topic", config.compressed_topic);
 
     optional_assign<bool>(node, "pub_decoded", config.pub_decoded);
-    optional_assign<double>(node, "decoded_scale", config.decoded_scale);
+    optional_assign<double>(node, "scale", config.decoded_scale);
     optional_assign<std::string>(node, "decoded_topic", config.decoded_topic);
 
     std::string decoded_format_str = "bgr8";
@@ -182,6 +182,7 @@ void BRollStorage::open(
 
   video_reader_.emplace(storage_options.uri);
   frame_decoder_.emplace(video_reader_->codec_id(), config_.decoded_format, config_.decoded_scale);
+  RCLCPP_INFO(logger_, "Successfully opened %s with BRollStorage", storage_options.uri.c_str());
 
   metadata_ = rosbag2_storage::BagMetadata{};
   metadata_.bag_size = get_bagfile_size();
