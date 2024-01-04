@@ -55,9 +55,11 @@ namespace broll
 FrameDecoder::FrameDecoder(
   AVCodecID codec_id,
   AVPixelFormat target_fmt,
-  double scale)
+  double scale,
+  bool dbg_print)
 : targetPixFmt_(target_fmt),
-  scale_(scale)
+  scale_(scale),
+  dbg_print_(dbg_print)
 {
   AVCodecParameters * params = avcodec_parameters_alloc();
   assert(params);
@@ -107,32 +109,34 @@ FrameDecoder::~FrameDecoder()
 
 bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 {
-  int response = avcodec_send_packet(codecCtx_, &packet_in);
-  if (response < 0) {
+  int send_pkt_resp = avcodec_send_packet(codecCtx_, &packet_in);
+  if (send_pkt_resp < 0) {
     char errStr[128] = {};
-    av_strerror(response, errStr, sizeof(errStr));
+    av_strerror(send_pkt_resp, errStr, sizeof(errStr));
     BROLL_LOG_ERROR("avcodec_send_packet failed: %s", errStr);
     return false;
   }
-  response = avcodec_receive_frame(codecCtx_, &frame_out);
-  if (response == AVERROR(EAGAIN)) {
+  int recv_frame_resp = avcodec_receive_frame(codecCtx_, &frame_out);
+  if (recv_frame_resp == AVERROR(EAGAIN)) {
     BROLL_LOG_DEBUG("avcodec_receive_frame returned EAGAIN");
     return false;
-  } else if (response == AVERROR_EOF) {
+  } else if (recv_frame_resp == AVERROR_EOF) {
     BROLL_LOG_ERROR("avcodec_receive_frame returned EOF");
     return false;
-  } else if (response < 0) {
+  } else if (recv_frame_resp < 0) {
     assert(false && "Error while receiving a frame from the decoder");
     return false;
   }
-  if (response < 0) {
+  if (recv_frame_resp < 0) {
     return false;
   }
 
   if (dbg_print_) {
     BROLL_LOG_INFO(
-      "Frame %d (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %d]",
+      "Frame %d (send %d, recv %d) (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %d]",
       codecCtx_->frame_number,
+      send_pkt_resp,
+      recv_frame_resp,
       av_get_picture_type_char(frame_out.pict_type),
       frame_out.pkt_size,
       frame_out.format,

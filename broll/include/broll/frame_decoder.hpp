@@ -39,7 +39,8 @@ public:
   FrameDecoder(
     AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
-    double scale = 1.0f);
+    double scale = 1.0f,
+    bool dbg_print = false);
   virtual ~FrameDecoder();
 
   /// @brief Decode a compressed image packet into an image message
