@@ -133,7 +133,9 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 
   if (dbg_print_) {
     BROLL_LOG_INFO(
-      "Frame %d (send %d, recv %d) (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %d]",
+      "Frame %d (send %d, recv %d) "
+      "(type=%c, size=%d bytes, format=%d) "
+      "pts %ld key_frame %d [DTS %d]",
       codecCtx_->frame_number,
       send_pkt_resp,
       recv_frame_resp,
