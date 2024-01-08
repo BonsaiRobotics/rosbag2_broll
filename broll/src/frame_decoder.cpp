@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#define DEBUG
+
 extern "C" {
 #include <libavcodec/avcodec.h>
+// #include <libavcodec/hevc.h>
 #include <libavutil/imgutils.h>
 }
 
@@ -47,6 +50,7 @@ static AVFrame * allocPicture(enum AVPixelFormat pix_fmt, int width, int height)
 
 static const int64_t NS_TO_S = 1000000000;
 
+
 }  // namespace
 
 namespace broll
@@ -61,6 +65,7 @@ FrameDecoder::FrameDecoder(
   scale_(scale),
   dbg_print_(dbg_print)
 {
+
   AVCodecParameters * params = avcodec_parameters_alloc();
   assert(params);
   params->codec_type = AVMEDIA_TYPE_VIDEO;
@@ -80,6 +85,8 @@ FrameDecoder::FrameDecoder(
     BROLL_LOG_ERROR("Failed to alloc context");
     assert(false);
   }
+  codecCtx_->opaque = this;
+  av_log_set_callback(&FrameDecoder::avLogCallbackWrapper);
 
   if (avcodec_parameters_to_context(codecCtx_, params) < 0) {
     assert(false && "failed to copy codec params to codec context");
@@ -109,6 +116,9 @@ FrameDecoder::~FrameDecoder()
 
 bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 {
+  // HEVCContext * hevc_ctx = (HEVCContext *)codecCtx_->priv_data;
+
+  // BROLL_LOG_INFO("..send packet (size %d)", packet_in.size);
   int send_pkt_resp = avcodec_send_packet(codecCtx_, &packet_in);
   if (send_pkt_resp < 0) {
     char errStr[128] = {};
@@ -130,43 +140,90 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
   if (recv_frame_resp < 0) {
     return false;
   }
+  // BROLL_LOG_INFO("..after %d", codecCtx_->frame_number);
 
   if (dbg_print_) {
+    // BROLL_LOG_INFO("dur %ld", frame_out.pkt_duration);
     BROLL_LOG_INFO(
-      "Frame %d (send %d, recv %d) "
-      "(type=%c, size=%d bytes, format=%d) "
-      "pts %ld key_frame %d [DTS %d]",
+      "Frame %d "  //(send %d, recv %d) "
+      // "flags %d decerr %d "
+      "(type=%c, size=%dB, format=%d) "
+      // "pts %ld "
+      "key_frame %d [DTS %d]",
       codecCtx_->frame_number,
-      send_pkt_resp,
-      recv_frame_resp,
+      // send_pkt_resp,
+      // recv_frame_resp,
+      // frame_out.flags, frame_out.decode_error_flags,
       av_get_picture_type_char(frame_out.pict_type),
       frame_out.pkt_size,
       frame_out.format,
-      frame_out.pts,
+      // frame_out.pts,
       frame_out.key_frame,
       frame_out.coded_picture_number
     );
   }
-  return true;
-}
-
-bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
-{
-  if (!decodeFrame(in, *decodedFrame_)) {
-    if (++consecutive_receive_failures_ % 20 == 0) {
-      BROLL_LOG_ERROR("Failed to decode 20 frames");
+  if (skip_pframes_) {
+    if (frame_out.key_frame) {
+      BROLL_LOG_INFO("Received next I frame after skipping %d P frames without a reference.", skipped_pframes_.load());
+      skip_pframes_ = false;
+      skipped_pframes_ = 0;
+    } else {
+      if (skipped_pframes_ == 0) {
+        BROLL_LOG_INFO("Skipping P frames since couldn't find a reference I frame.");
+      }
+      skipped_pframes_++;
     }
     return false;
   }
-  if (consecutive_receive_failures_ > 0) {
-    BROLL_LOG_INFO(
-      "Recovered from %d frame decode failures",
-      consecutive_receive_failures_);
-    consecutive_receive_failures_ = 0;
+  return true;
+}
+
+void FrameDecoder::avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs)
+{
+  // TODO(ek) look for errors - not every log may come from context?
+  auto * ctx = reinterpret_cast<AVCodecContext *>(ptr);
+  auto * fdec = reinterpret_cast<broll::FrameDecoder *>(ctx->opaque);
+  fdec->logCallback(level, fmt, vargs);
+}
+
+void FrameDecoder::logCallback(int level, const char * fmt, va_list vargs)
+{
+  char line[1024];
+  vsnprintf(line, sizeof(line), fmt, vargs);
+  static const char * badref_line = "Could not find ref with POC";
+  if (strncmp(fmt, badref_line, strlen(badref_line)) == 0) {
+    if (!skip_pframes_) {
+      skipped_pframes_ = 0;
+      skip_pframes_ = true;
+    }
+    return;
   }
 
+  switch (level) {
+    case AV_LOG_PANIC:
+    case AV_LOG_FATAL:
+    case AV_LOG_ERROR:
+      BROLL_LOG_ERROR_STREAM(line);
+      break;
+    case AV_LOG_WARNING:
+      BROLL_LOG_WARN_STREAM(line);
+      break;
+    case AV_LOG_INFO:
+      BROLL_LOG_INFO_STREAM(line);
+      break;
+    case AV_LOG_VERBOSE:
+    case AV_LOG_DEBUG:
+      BROLL_LOG_DEBUG_STREAM(line);
+      break;
+    default:
+      break;
+  }
+}
+
+void FrameDecoder::initialize_sws_context()
+{
   if (!convertedFrame_) {
-    // Initialize decoded frame and sws context on first decode
+    // Initialize converted frame and sws context on first decode
 
     int width = decodedFrame_->width;
     int height = decodedFrame_->height;
@@ -190,7 +247,24 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
       0, nullptr, nullptr, nullptr);
     assert(swsCtx_ && "Failed to created sws context for conversion.");
   }
+}
 
+bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
+{
+  if (!decodeFrame(in, *decodedFrame_)) {
+    if (++consecutive_receive_failures_ % 20 == 0) {
+      BROLL_LOG_ERROR("Failed to decode 20 frames");
+    }
+    return false;
+  }
+  if (consecutive_receive_failures_ > 0) {
+    BROLL_LOG_INFO(
+      "Recovered from %d frame decode failures",
+      consecutive_receive_failures_);
+    consecutive_receive_failures_ = 0;
+  }
+
+  initialize_sws_context();
   sws_scale(
     swsCtx_,
     decodedFrame_->data, decodedFrame_->linesize, 0, decodedFrame_->height,

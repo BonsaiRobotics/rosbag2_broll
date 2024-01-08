@@ -15,6 +15,8 @@
 #ifndef BROLL__FRAME_DECODER_HPP_
 #define BROLL__FRAME_DECODER_HPP_
 
+#include <atomic>
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -55,7 +57,12 @@ public:
   bool decode(const sensor_msgs::msg::CompressedImage & in, sensor_msgs::msg::Image & out);
 
 protected:
+  void initialize_sws_context(const AVFrame & reference_frame);
   bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out);
+
+  // Pure-C function pointer to redirect libav log calls back to a class instance
+  static void avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs);
+  void logCallback(int level, const char * fmt, va_list vargs);
 
   AVPacket * packet_ = nullptr;
   AVCodec * codec_ = nullptr;
@@ -70,6 +77,9 @@ protected:
   uint scaled_height_ = 0u;
   uint consecutive_receive_failures_ = 0;
   bool dbg_print_ = false;
+
+  std::atomic<bool> skip_pframes_{false};
+  std::atomic<uint> skipped_pframes_{0};
 };
 
 }  // namespace broll
