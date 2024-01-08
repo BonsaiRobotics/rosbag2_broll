@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
@@ -62,7 +61,6 @@ FrameDecoder::FrameDecoder(
   scale_(scale),
   dbg_print_(dbg_print)
 {
-
   AVCodecParameters * params = avcodec_parameters_alloc();
   assert(params);
   params->codec_type = AVMEDIA_TYPE_VIDEO;
@@ -149,7 +147,9 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
   }
   if (skip_pframes_.load()) {
     if (frame_out.key_frame) {
-      BROLL_LOG_INFO("Recovered next I frame after skipping %d P frames without a reference.", skipped_pframes_.load());
+      BROLL_LOG_INFO(
+        "Recovered next I frame after skipping %d P frames without a reference.",
+        skipped_pframes_.load());
       skip_pframes_.store(false);
     } else {
       skipped_pframes_++;
@@ -163,15 +163,15 @@ void FrameDecoder::avLogCallbackWrapper(void * ptr, int level, const char * fmt,
 {
   static const char * const badref_line = "Could not find ref with POC";
 
-  AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
+  AVClass * avc = ptr ? reinterpret_cast<AVClass *>(ptr) : nullptr;
   if (avc == avcodec_get_class()) {
     // This log message is from/for an AVCodecContext
     auto * ctx = reinterpret_cast<AVCodecContext *>(ptr);
     if (
       ctx->opaque != nullptr &&
       strlen(fmt) >= strlen(badref_line) &&
-      strncmp(fmt, badref_line, strlen(badref_line)) == 0
-    ) {
+      strncmp(fmt, badref_line, strlen(badref_line)) == 0)
+    {
       // The user-set opaque pointer is there, and the log message matched the badref_line
       reinterpret_cast<broll::FrameDecoder *>(ctx->opaque)->startSkippingPFrames();
     }

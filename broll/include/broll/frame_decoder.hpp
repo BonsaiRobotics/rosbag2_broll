@@ -15,14 +15,14 @@
 #ifndef BROLL__FRAME_DECODER_HPP_
 #define BROLL__FRAME_DECODER_HPP_
 
-#include <atomic>
-
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
 }
+
+#include <atomic>
 
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
