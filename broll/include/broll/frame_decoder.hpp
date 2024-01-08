@@ -58,7 +58,6 @@ public:
   bool decode(const sensor_msgs::msg::CompressedImage & in, sensor_msgs::msg::Image & out);
 
 protected:
-  void initializeSwsContext();
   bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out);
 
   /// @brief Pure-C function pointer to redirect libav log calls back to a class instance
