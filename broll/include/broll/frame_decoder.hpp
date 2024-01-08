@@ -38,6 +38,7 @@ public:
   /// @param target_fmt Pixel format to convert to, if necessary.
   ///   AV_PIX_FMT_NONE guarantees no conversion.
   /// @param scale Scale applied to image dimensions (by multiplication, 0.5 is half size)
+  /// @param dbg_print Print info about each decoded frame to stdout
   FrameDecoder(
     AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
@@ -57,12 +58,27 @@ public:
   bool decode(const sensor_msgs::msg::CompressedImage & in, sensor_msgs::msg::Image & out);
 
 protected:
-  void initialize_sws_context(const AVFrame & reference_frame);
+  void initializeSwsContext();
   bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out);
 
-  // Pure-C function pointer to redirect libav log calls back to a class instance
+  /// @brief Pure-C function pointer to redirect libav log calls back to a class instance
+  ///
   static void avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs);
-  void logCallback(int level, const char * fmt, va_list vargs);
+
+  /// @brief Skip new P-frames until the next I-frame
+  ///
+  /// This allows the application context to detect when the video stream has missing
+  /// I-frames that lead to the gray diff-only frames that x265 produces in an attempt to
+  /// gracefully keep the stream going.
+  /// For the user, it is probably much better to have a stuttering video with only good
+  /// frames, rather than a smoother one with bad gray decoded images.
+  ///
+  /// Ideally this decoder class would be able to detect the condition itself, but the way
+  /// it is implemented now, we can detect the bad frames only via global libav log messages,
+  /// which is not per-AVCodecContext, instead being program-global.
+  /// The information is not available in the AVFrame, this condition is hidden from the libavcodec
+  /// user, we would probably have to be using libx265 directly to intercept it.
+  void startSkippingPFrames();
 
   AVPacket * packet_ = nullptr;
   AVCodec * codec_ = nullptr;

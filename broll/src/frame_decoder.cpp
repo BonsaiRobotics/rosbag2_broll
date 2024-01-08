@@ -162,15 +162,11 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
       frame_out.coded_picture_number
     );
   }
-  if (skip_pframes_) {
+  if (skip_pframes_.load()) {
     if (frame_out.key_frame) {
-      BROLL_LOG_INFO("Received next I frame after skipping %d P frames without a reference.", skipped_pframes_.load());
-      skip_pframes_ = false;
-      skipped_pframes_ = 0;
+      BROLL_LOG_INFO("Recovered next I frame after skipping %d P frames without a reference.", skipped_pframes_.load());
+      skip_pframes_.store(false);
     } else {
-      if (skipped_pframes_ == 0) {
-        BROLL_LOG_INFO("Skipping P frames since couldn't find a reference I frame.");
-      }
       skipped_pframes_++;
     }
     return false;
@@ -180,47 +176,36 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 
 void FrameDecoder::avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs)
 {
-  // TODO(ek) look for errors - not every log may come from context?
-  auto * ctx = reinterpret_cast<AVCodecContext *>(ptr);
-  auto * fdec = reinterpret_cast<broll::FrameDecoder *>(ctx->opaque);
-  fdec->logCallback(level, fmt, vargs);
-}
+  static const char * const badref_line = "Could not find ref with POC";
 
-void FrameDecoder::logCallback(int level, const char * fmt, va_list vargs)
-{
-  char line[1024];
-  vsnprintf(line, sizeof(line), fmt, vargs);
-  static const char * badref_line = "Could not find ref with POC";
-  if (strncmp(fmt, badref_line, strlen(badref_line)) == 0) {
-    if (!skip_pframes_) {
-      skipped_pframes_ = 0;
-      skip_pframes_ = true;
+  AVClass* avc = ptr ? *(AVClass **) ptr : NULL;
+  if (avc == avcodec_get_class()) {
+    // This log message is from/for an AVCodecContext
+    auto * ctx = reinterpret_cast<AVCodecContext *>(ptr);
+    if (
+      ctx->opaque != nullptr &&
+      strlen(fmt) >= strlen(badref_line) &&
+      strncmp(fmt, badref_line, strlen(badref_line)) == 0
+    ) {
+      // The user-set opaque pointer is there, and the log message matched the badref_line
+      reinterpret_cast<broll::FrameDecoder *>(ctx->opaque)->startSkippingPFrames();
     }
-    return;
   }
 
-  switch (level) {
-    case AV_LOG_PANIC:
-    case AV_LOG_FATAL:
-    case AV_LOG_ERROR:
-      BROLL_LOG_ERROR_STREAM(line);
-      break;
-    case AV_LOG_WARNING:
-      BROLL_LOG_WARN_STREAM(line);
-      break;
-    case AV_LOG_INFO:
-      BROLL_LOG_INFO_STREAM(line);
-      break;
-    case AV_LOG_VERBOSE:
-    case AV_LOG_DEBUG:
-      BROLL_LOG_DEBUG_STREAM(line);
-      break;
-    default:
-      break;
+  // Always forward to default libav callback after doing interception
+  return av_log_default_callback(ptr, level, fmt, vargs);
+}
+
+void FrameDecoder::startSkippingPFrames()
+{
+  if (!skip_pframes_.load()) {
+    skipped_pframes_.store(0);
+    skip_pframes_.store(true);
+    BROLL_LOG_WARN("Skipping P frames since couldn't find a reference I frame.");
   }
 }
 
-void FrameDecoder::initialize_sws_context()
+void FrameDecoder::initializeSwsContext()
 {
   if (!convertedFrame_) {
     // Initialize converted frame and sws context on first decode
@@ -264,7 +249,7 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
     consecutive_receive_failures_ = 0;
   }
 
-  initialize_sws_context();
+  initializeSwsContext();
   sws_scale(
     swsCtx_,
     decodedFrame_->data, decodedFrame_->linesize, 0, decodedFrame_->height,
