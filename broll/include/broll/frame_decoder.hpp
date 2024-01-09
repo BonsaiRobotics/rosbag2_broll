@@ -60,23 +60,23 @@ public:
 protected:
   bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out);
 
-  /// @brief Pure-C function pointer to redirect libav log calls back to a class instance
-  ///
+  /// @brief Pure-C function pointer to intercept libav log messages and direct
+  /// callbacks to a class instance if necessary.
+  /// Note: this handles multiple instances of FrameDecoder, but will be disabled if
+  /// another part of the program also calls av_log_set_callback
   static void avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs);
 
   /// @brief Skip new P-frames until the next I-frame
   ///
-  /// This allows the application context to detect when the video stream has missing
-  /// I-frames that lead to the gray diff-only frames that x265 produces in an attempt to
-  /// gracefully keep the stream going.
-  /// For the user, it is probably much better to have a stuttering video with only good
-  /// frames, rather than a smoother one with bad gray decoded images.
+  /// This allows the decoder to detect when the video stream has missing I-frames that lead to
+  /// the gray diff-only frames that x265 produces in an attempt to gracefully continue the stream.
+  /// For the ROS user, it is probably better to have a stuttering video with only good frames,
+  /// rather than a smoother one with bad gray decoded images.
   ///
-  /// Ideally this decoder class would be able to detect the condition itself, but the way
-  /// it is implemented now, we can detect the bad frames only via global libav log messages,
-  /// which is not per-AVCodecContext, instead being program-global.
-  /// The information is not available in the AVFrame, this condition is hidden from the libavcodec
-  /// user, we would probably have to be using libx265 directly to intercept it.
+  /// Ideally this decoder class would be able to detect the condition directly, but the way
+  /// it is implemented now, we can detect the bad frames only via av_log messages.
+  /// The information about this case is not available to the libavcodec user, being only
+  /// available in HEVC decoder internals, so we would need to use libx265 directly to detect.
   void startSkippingPFrames();
 
   AVPacket * packet_ = nullptr;

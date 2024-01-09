@@ -111,14 +111,14 @@ FrameDecoder::~FrameDecoder()
 
 bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 {
-  int send_pkt_resp = avcodec_send_packet(codecCtx_, &packet_in);
+  const int send_pkt_resp = avcodec_send_packet(codecCtx_, &packet_in);
   if (send_pkt_resp < 0) {
     char errStr[128] = {};
     av_strerror(send_pkt_resp, errStr, sizeof(errStr));
     BROLL_LOG_ERROR("avcodec_send_packet failed: %s", errStr);
     return false;
   }
-  int recv_frame_resp = avcodec_receive_frame(codecCtx_, &frame_out);
+  const int recv_frame_resp = avcodec_receive_frame(codecCtx_, &frame_out);
   if (recv_frame_resp == AVERROR(EAGAIN)) {
     BROLL_LOG_DEBUG("avcodec_receive_frame returned EAGAIN");
     return false;
