@@ -55,9 +55,11 @@ namespace broll
 FrameDecoder::FrameDecoder(
   AVCodecID codec_id,
   AVPixelFormat target_fmt,
-  double scale)
+  double scale,
+  bool dbg_print)
 : targetPixFmt_(target_fmt),
-  scale_(scale)
+  scale_(scale),
+  dbg_print_(dbg_print)
 {
   AVCodecParameters * params = avcodec_parameters_alloc();
   assert(params);
@@ -78,6 +80,8 @@ FrameDecoder::FrameDecoder(
     BROLL_LOG_ERROR("Failed to alloc context");
     assert(false);
   }
+  codecCtx_->opaque = this;
+  av_log_set_callback(&FrameDecoder::avLogCallbackWrapper);
 
   if (avcodec_parameters_to_context(codecCtx_, params) < 0) {
     assert(false && "failed to copy codec params to codec context");
@@ -107,25 +111,25 @@ FrameDecoder::~FrameDecoder()
 
 bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 {
-  int response = avcodec_send_packet(codecCtx_, &packet_in);
-  if (response < 0) {
+  const int send_pkt_resp = avcodec_send_packet(codecCtx_, &packet_in);
+  if (send_pkt_resp < 0) {
     char errStr[128] = {};
-    av_strerror(response, errStr, sizeof(errStr));
+    av_strerror(send_pkt_resp, errStr, sizeof(errStr));
     BROLL_LOG_ERROR("avcodec_send_packet failed: %s", errStr);
     return false;
   }
-  response = avcodec_receive_frame(codecCtx_, &frame_out);
-  if (response == AVERROR(EAGAIN)) {
+  const int recv_frame_resp = avcodec_receive_frame(codecCtx_, &frame_out);
+  if (recv_frame_resp == AVERROR(EAGAIN)) {
     BROLL_LOG_DEBUG("avcodec_receive_frame returned EAGAIN");
     return false;
-  } else if (response == AVERROR_EOF) {
+  } else if (recv_frame_resp == AVERROR_EOF) {
     BROLL_LOG_ERROR("avcodec_receive_frame returned EOF");
     return false;
-  } else if (response < 0) {
+  } else if (recv_frame_resp < 0) {
     assert(false && "Error while receiving a frame from the decoder");
     return false;
   }
-  if (response < 0) {
+  if (recv_frame_resp < 0) {
     return false;
   }
 
@@ -141,7 +145,49 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
       frame_out.coded_picture_number
     );
   }
+  if (skip_pframes_.load()) {
+    if (frame_out.key_frame) {
+      BROLL_LOG_INFO(
+        "Recovered next I-frame after skipping %d P-frames without a reference.",
+        skipped_pframes_.load());
+      skip_pframes_.store(false);
+    } else {
+      skipped_pframes_++;
+    }
+    return false;
+  }
   return true;
+}
+
+void FrameDecoder::avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs)
+{
+  // First forward to default libav callback to print properly
+  av_log_default_callback(ptr, level, fmt, vargs);
+
+  static const char * const badref_line = "Could not find ref with POC";
+
+  AVClass * avc = ptr ? *reinterpret_cast<AVClass **>(ptr) : nullptr;
+  if (avc == avcodec_get_class()) {
+    // This log message is from/for an AVCodecContext
+    auto * ctx = reinterpret_cast<AVCodecContext *>(ptr);
+    if (
+      ctx->opaque != nullptr &&
+      strlen(fmt) >= strlen(badref_line) &&
+      strncmp(fmt, badref_line, strlen(badref_line)) == 0)
+    {
+      // The user-set opaque pointer is there, and the log message matched the badref_line
+      reinterpret_cast<broll::FrameDecoder *>(ctx->opaque)->startSkippingPFrames();
+    }
+  }
+}
+
+void FrameDecoder::startSkippingPFrames()
+{
+  if (!skip_pframes_.load()) {
+    skipped_pframes_.store(0);
+    skip_pframes_.store(true);
+    BROLL_LOG_WARN("Skipping P-frames because of missing reference I-frame.");
+  }
 }
 
 bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
@@ -160,7 +206,7 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
   }
 
   if (!convertedFrame_) {
-    // Initialize decoded frame and sws context on first decode
+    // Initialize converted frame and sws context on first decode
 
     int width = decodedFrame_->width;
     int height = decodedFrame_->height;

@@ -22,6 +22,8 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
+#include <atomic>
+
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
@@ -36,10 +38,12 @@ public:
   /// @param target_fmt Pixel format to convert to, if necessary.
   ///   AV_PIX_FMT_NONE guarantees no conversion.
   /// @param scale Scale applied to image dimensions (by multiplication, 0.5 is half size)
+  /// @param dbg_print Print info about each decoded frame to stdout
   FrameDecoder(
     AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
-    double scale = 1.0f);
+    double scale = 1.0f,
+    bool dbg_print = false);
   virtual ~FrameDecoder();
 
   /// @brief Decode a compressed image packet into an image message
@@ -56,6 +60,25 @@ public:
 protected:
   bool decodeFrame(const AVPacket & packet_in, AVFrame & frame_out);
 
+  /// @brief Pure-C function pointer to intercept libav log messages and direct
+  /// callbacks to a class instance if necessary.
+  /// Note: this handles multiple instances of FrameDecoder, but will be disabled if
+  /// another part of the program also calls av_log_set_callback
+  static void avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs);
+
+  /// @brief Skip new P-frames until the next I-frame
+  ///
+  /// This allows the decoder to detect when the video stream has missing I-frames that lead to
+  /// the gray diff-only frames that x265 produces in an attempt to gracefully continue the stream.
+  /// For the ROS user, it is probably better to have a stuttering video with only good frames,
+  /// rather than a smoother one with bad gray decoded images.
+  ///
+  /// Ideally this decoder class would be able to detect the condition directly, but the way
+  /// it is implemented now, we can detect the bad frames only via av_log messages.
+  /// The information about this case is not available to the libavcodec user, being only
+  /// available in HEVC decoder internals, so we would need to use libx265 directly to detect.
+  void startSkippingPFrames();
+
   AVPacket * packet_ = nullptr;
   AVCodec * codec_ = nullptr;
   AVCodecContext * codecCtx_ = nullptr;
@@ -69,6 +92,9 @@ protected:
   uint scaled_height_ = 0u;
   uint consecutive_receive_failures_ = 0;
   bool dbg_print_ = false;
+
+  std::atomic<bool> skip_pframes_{false};
+  std::atomic<uint> skipped_pframes_{0};
 };
 
 }  // namespace broll
