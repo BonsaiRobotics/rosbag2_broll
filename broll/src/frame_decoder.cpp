@@ -148,7 +148,7 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
   if (skip_pframes_.load()) {
     if (frame_out.key_frame) {
       BROLL_LOG_INFO(
-        "Recovered next I frame after skipping %d P frames without a reference.",
+        "Recovered next I-frame after skipping %d P-frames without a reference.",
         skipped_pframes_.load());
       skip_pframes_.store(false);
     } else {
@@ -161,9 +161,12 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 
 void FrameDecoder::avLogCallbackWrapper(void * ptr, int level, const char * fmt, va_list vargs)
 {
+  // First forward to default libav callback to print properly
+  av_log_default_callback(ptr, level, fmt, vargs);
+
   static const char * const badref_line = "Could not find ref with POC";
 
-  AVClass * avc = ptr ? reinterpret_cast<AVClass *>(ptr) : nullptr;
+  AVClass * avc = ptr ? *reinterpret_cast<AVClass **>(ptr) : nullptr;
   if (avc == avcodec_get_class()) {
     // This log message is from/for an AVCodecContext
     auto * ctx = reinterpret_cast<AVCodecContext *>(ptr);
@@ -176,9 +179,6 @@ void FrameDecoder::avLogCallbackWrapper(void * ptr, int level, const char * fmt,
       reinterpret_cast<broll::FrameDecoder *>(ctx->opaque)->startSkippingPFrames();
     }
   }
-
-  // Always forward to default libav callback after doing interception
-  return av_log_default_callback(ptr, level, fmt, vargs);
 }
 
 void FrameDecoder::startSkippingPFrames()
@@ -186,7 +186,7 @@ void FrameDecoder::startSkippingPFrames()
   if (!skip_pframes_.load()) {
     skipped_pframes_.store(0);
     skip_pframes_.store(true);
-    BROLL_LOG_WARN("Skipping P frames since couldn't find a reference I frame.");
+    BROLL_LOG_WARN("Skipping P-frames because of missing reference I-frame.");
   }
 }
 
