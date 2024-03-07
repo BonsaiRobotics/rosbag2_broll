@@ -249,8 +249,10 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
     assert(swsCtx_ && "Failed to created sws context for conversion.");
     if (set_extended_color_range) {
       int contrast, saturation, brightness, dstRange, srcRange;
-      int *inv_table, *table;
-      sws_getColorspaceDetails(swsCtx_, &inv_table, &srcRange, &table, &dstRange, &brightness, &contrast, &saturation);
+      int * inv_table, * table;
+      sws_getColorspaceDetails(
+        swsCtx_, &inv_table, &srcRange, &table, &dstRange, &brightness,
+        &contrast, &saturation);
 
       sws_setColorspaceDetails(
         swsCtx_, inv_table, 1, table, 1,
