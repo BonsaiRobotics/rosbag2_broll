@@ -224,13 +224,23 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
     convertedFrame_ = allocPicture(targetPixFmt_, scaled_width_, scaled_height_);
     assert(convertedFrame_ && "failed to alloc convertedFrame");
 
+    bool set_extended_color_range = false;
+    AVPixelFormat sws_pix_fmt = codecCtx_->pix_fmt;
+    if (sws_pix_fmt == AV_PIX_FMT_YUVJ420P) {
+      sws_pix_fmt = AV_PIX_FMT_YUV420P;
+      set_extended_color_range = true;
+    }
     swsCtx_ = sws_getContext(
-      width, height, codecCtx_->pix_fmt,
+      width, height, sws_pix_fmt,
       scaled_width_, scaled_height_, targetPixFmt_,
       0, nullptr, nullptr, nullptr);
     assert(swsCtx_ && "Failed to created sws context for conversion.");
+    if (set_extended_color_range) {
+      sws_setColorspaceDetails(
+        swsCtx_, sws_getCoefficients(SWS_CS_ITU601), 1, sws_getCoefficients(SWS_CS_ITU601), 1,
+        0, 1 << 16, 1 << 16);
+    }
   }
-
   sws_scale(
     swsCtx_,
     decodedFrame_->data, decodedFrame_->linesize, 0, decodedFrame_->height,
