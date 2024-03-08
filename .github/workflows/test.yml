@@ -28,7 +28,7 @@ jobs:
             "build": {
               "cmake-args": [
                 "-DCMAKE_CXX_FLAGS=\"-Werror\"",
-                "-Dament_cmake_ROOT=\"/opt/ros/$ROS_DISTRO/share/\""
+                "-Dament_cmake_ROOT=\"/opt/ros/${{ matrix.ros_distro }}/share/\""
               ]
             }
           }
