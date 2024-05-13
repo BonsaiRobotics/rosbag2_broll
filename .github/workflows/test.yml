@@ -7,22 +7,30 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest
-    env:
-      ROS_DISTRO: ${{ matrix.ros_distro }}
-    container:
-      image: rostooling/setup-ros-docker:ubuntu-jammy-latest
     strategy:
       fail-fast: false
       matrix:
-          ros_distro: [humble, iron, rolling]
+        include:
+          - ros: humble
+            ubuntu: jammy
+          - ros: iron
+            ubuntu: jammy
+          - ros: jazzy
+            ubuntu: noble
+          - ros: rolling
+            ubuntu: noble
+    runs-on: ubuntu-latest
+    container:
+      image: rostooling/setup-ros-docker:ubuntu-${{ matrix.ubuntu }}-latest
+    env:
+      ROS_DISTRO: ${{ matrix.ros_distro }}
     steps:
     - name: Build and run tests
       id: action-ros-ci
       uses: ros-tooling/action-ros-ci@v0.3
       with:
         import-token: ${{ secrets.GITHUB_TOKEN }}
-        target-ros2-distro: ${{ matrix.ros_distro }}
+        target-ros2-distro: ${{ matrix.ros }}
         colcon-defaults: |
           {
             "build": {
