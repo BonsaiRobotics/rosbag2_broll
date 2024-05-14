@@ -224,13 +224,41 @@ bool FrameDecoder::decode(const AVPacket & in, sensor_msgs::msg::Image & out)
     convertedFrame_ = allocPicture(targetPixFmt_, scaled_width_, scaled_height_);
     assert(convertedFrame_ && "failed to alloc convertedFrame");
 
+    bool set_extended_color_range = false;
+    AVPixelFormat sws_pix_fmt = codecCtx_->pix_fmt;
+    switch (sws_pix_fmt) {
+      case AV_PIX_FMT_YUVJ420P:
+        sws_pix_fmt = AV_PIX_FMT_YUV420P;
+        set_extended_color_range = true;
+        break;
+      case AV_PIX_FMT_YUVJ422P:
+        sws_pix_fmt = AV_PIX_FMT_YUV422P;
+        set_extended_color_range = true;
+        break;
+      case AV_PIX_FMT_YUVJ444P:
+        sws_pix_fmt = AV_PIX_FMT_YUV444P;
+        set_extended_color_range = true;
+        break;
+      default:
+        break;
+    }
     swsCtx_ = sws_getContext(
-      width, height, codecCtx_->pix_fmt,
+      width, height, sws_pix_fmt,
       scaled_width_, scaled_height_, targetPixFmt_,
       0, nullptr, nullptr, nullptr);
     assert(swsCtx_ && "Failed to created sws context for conversion.");
-  }
+    if (set_extended_color_range) {
+      int contrast, saturation, brightness, dstRange, srcRange;
+      int * inv_table, * table;
+      sws_getColorspaceDetails(
+        swsCtx_, &inv_table, &srcRange, &table, &dstRange, &brightness,
+        &contrast, &saturation);
 
+      sws_setColorspaceDetails(
+        swsCtx_, inv_table, 1, table, 1,
+        brightness, contrast, saturation);
+    }
+  }
   sws_scale(
     swsCtx_,
     decodedFrame_->data, decodedFrame_->linesize, 0, decodedFrame_->height,
