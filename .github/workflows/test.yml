@@ -11,13 +11,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - ros: humble
+          - ros_distro: humble
             ubuntu: jammy
-          - ros: iron
+          - ros_distro: iron
             ubuntu: jammy
-          - ros: jazzy
+          - ros_distro: jazzy
             ubuntu: noble
-          - ros: rolling
+          - ros_distro: rolling
             ubuntu: noble
     runs-on: ubuntu-latest
     container:
@@ -30,7 +30,7 @@ jobs:
       uses: ros-tooling/action-ros-ci@v0.3
       with:
         import-token: ${{ secrets.GITHUB_TOKEN }}
-        target-ros2-distro: ${{ matrix.ros }}
+        target-ros2-distro: ${{ matrix.ros_distro }}
         colcon-defaults: |
           {
             "build": {
