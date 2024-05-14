@@ -22,6 +22,8 @@
 
 #define BROLL_PACKAGE_NAME "broll"
 
+/* *INDENT-OFF* */
+// note: uncrustify upgraded between Iron->Jazzy to handle these macros differently, and who cares
 #define BROLL_LOG_INFO(...) \
   RCUTILS_LOG_INFO_NAMED(BROLL_PACKAGE_NAME, __VA_ARGS__)
 
@@ -57,5 +59,6 @@
     __ss << args; \
     RCUTILS_LOG_DEBUG_NAMED(BROLL_PACKAGE_NAME, "%s", __ss.str().c_str()); \
 } while (0)
+/* *INDENT-ON* */
 
 #endif  // LOGGING_HPP_
