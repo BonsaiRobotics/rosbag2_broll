@@ -80,7 +80,7 @@ protected:
   void startSkippingPFrames();
 
   AVPacket * packet_ = nullptr;
-  AVCodec * codec_ = nullptr;
+  const AVCodec * codec_ = nullptr;
   AVCodecContext * codecCtx_ = nullptr;
   AVPixelFormat targetPixFmt_ = AV_PIX_FMT_NONE;
   SwsContext * swsCtx_ = nullptr;

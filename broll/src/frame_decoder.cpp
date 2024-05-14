@@ -14,6 +14,8 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
+#include <libavcodec/version.h>
 #include <libavutil/imgutils.h>
 }
 
@@ -133,20 +135,28 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
     return false;
   }
 
+#if LIBAVCODEC_VERSION_MAJOR < 60
+  int64_t frame_num = codecCtx_->frame_number;
+  bool is_key_frame = frame_out.key_frame;
+#else
+  int64_t frame_num = codecCtx_->frame_num;
+  bool is_key_frame = frame_out.flags & AV_FRAME_FLAG_KEY;
+#endif
+
   if (dbg_print_) {
     BROLL_LOG_INFO(
-      "Frame %d (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %d]",
-      codecCtx_->frame_number,
+      "Frame %ld (type=%c, size=%d bytes, format=%d) pts %ld key_frame %d [DTS %ld]",
+      frame_num,
       av_get_picture_type_char(frame_out.pict_type),
-      frame_out.pkt_size,
+      packet_in.size,
       frame_out.format,
       frame_out.pts,
-      frame_out.key_frame,
-      frame_out.coded_picture_number
+      is_key_frame,
+      frame_out.pkt_dts
     );
   }
   if (skip_pframes_.load()) {
-    if (frame_out.key_frame) {
+    if (is_key_frame) {
       BROLL_LOG_INFO(
         "Recovered next I-frame after skipping %d P-frames without a reference.",
         skipped_pframes_.load());
