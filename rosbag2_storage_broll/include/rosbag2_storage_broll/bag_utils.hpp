@@ -51,7 +51,11 @@ serialize_msg(
   serde.serialize_message(&msg, &serialized_msg);
 
   auto bag_msg = std::make_shared<rosbag2_storage::SerializedBagMessage>();
+#if defined(ROS2_JAZZY) || defined(ROS2_ROLLING)
+  bag_msg->recv_timestamp = timestamp.nanoseconds();
+#else
   bag_msg->time_stamp = timestamp.nanoseconds();
+#endif
   bag_msg->topic_name = topic_name;
 
   rcutils_uint8_array_t * serialized_data = new rcutils_uint8_array_t();
