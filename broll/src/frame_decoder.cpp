@@ -135,12 +135,12 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
     return false;
   }
 
-#if LIBAVCODEC_VERSION_MAJOR < 60
-  int64_t frame_num = codecCtx_->frame_number;
-  bool is_key_frame = frame_out.key_frame;
-#else
+#if LIBAVCODEC_VERSION_MAJOR >= 60
   int64_t frame_num = codecCtx_->frame_num;
   bool is_key_frame = frame_out.flags & AV_FRAME_FLAG_KEY;
+#else
+  int64_t frame_num = codecCtx_->frame_number;
+  bool is_key_frame = frame_out.key_frame;
 #endif
 
   if (dbg_print_) {
