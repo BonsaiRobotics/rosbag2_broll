@@ -14,7 +14,9 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#if LIBAVCODEC_VERSION_MAJOR >= 60
 #include <libavcodec/bsf.h>
+#endif
 #include <libavcodec/version.h>
 #include <libavutil/imgutils.h>
 }
