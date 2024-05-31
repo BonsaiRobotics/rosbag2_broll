@@ -43,7 +43,8 @@ public:
     AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
     double scale = 1.0f,
-    bool dbg_print = false);
+    bool dbg_print = false,
+    bool use_cuda = false);
   virtual ~FrameDecoder();
 
   /// @brief Decode a compressed image packet into an image message
@@ -85,6 +86,7 @@ protected:
   AVPixelFormat targetPixFmt_ = AV_PIX_FMT_NONE;
   SwsContext * swsCtx_ = nullptr;
   AVFrame * decodedFrame_ = nullptr;
+  AVFrame * hardwareFrame_ = nullptr;
   AVFrame * convertedFrame_ = nullptr;
 
   float scale_ = 1.0f;
