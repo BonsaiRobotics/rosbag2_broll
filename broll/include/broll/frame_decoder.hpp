@@ -97,7 +97,8 @@ protected:
   AVFrame * convertedFrame_ = nullptr;
 
   // Hardware decoding extras
-  AVPixelFormat hwPixFmt_ = AV_PIX_FMT_NONE;
+  AVPixelFormat hwPixFmt_ = AV_PIX_FMT_NONE;  // Pixel format on the hardware memory side
+  AVPixelFormat hwSoftwarePixFmt_ = AV_PIX_FMT_NONE;  // Software-side pixel format from hardware
   AVBufferRef * hwDeviceCtx_ = nullptr;
   AVFrame * hwFrame_ = nullptr;
 

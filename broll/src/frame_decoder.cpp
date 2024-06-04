@@ -96,7 +96,9 @@ FrameDecoder::FrameDecoder(
         break;
       }
     }
-    BROLL_LOG_INFO("Hardware decoding enabled. Pixel format %s", av_get_pix_fmt_name(hwPixFmt_));
+    BROLL_LOG_INFO(
+      "Hardware decoding enabled. Pixel format \"%s\"",
+      av_get_pix_fmt_name(hwPixFmt_));
   }
 
   codecCtx_ = avcodec_alloc_context3(codec_);
@@ -118,6 +120,27 @@ FrameDecoder::FrameDecoder(
       assert(false && "Failed to initialize hardware decoder.");
     }
     codecCtx_->hw_device_ctx = av_buffer_ref(hwDeviceCtx_);
+    {
+      // Check what software-side pixel formats the hardware transfer supports.
+      // Print all for visibility, but select just the first one.
+      // This should probably be configurable, to let user target best pre-sws fmt.
+      AVHWFramesConstraints * hw_frames_const = av_hwdevice_get_hwframe_constraints(
+        hwDeviceCtx_, nullptr);
+      assert(hw_frames_const && "Couldn't retrieve hardware device frame constraints.");
+      hwSoftwarePixFmt_ = AV_PIX_FMT_NONE;
+      for (AVPixelFormat * p = hw_frames_const->valid_sw_formats; *p != AV_PIX_FMT_NONE; p++) {
+        if (sws_isSupportedInput(*p)) {
+          BROLL_LOG_INFO(
+            "Supported hardware-to-software pixel format: \"%s\"",
+            av_get_pix_fmt_name(*p));
+          if (hwSoftwarePixFmt_ == AV_PIX_FMT_NONE) {
+            hwSoftwarePixFmt_ = *p;
+          }
+        }
+      }
+      av_hwframe_constraints_free(&hw_frames_const);
+      BROLL_LOG_INFO("Selected hw/sw pixel format: \"%s\"", av_get_pix_fmt_name(hwSoftwarePixFmt_));
+    }
 
     BROLL_LOG_INFO("Succeeded to init hardware decoder");
     hwFrame_ = av_frame_alloc();
@@ -181,7 +204,9 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
       BROLL_LOG_ERROR("Received hardware frame was not in expected pixel format.");
       return false;
     }
-    frame_out.format = AV_PIX_FMT_NV12;  // TODO(ek) not hardcode the software pixel format
+    frame_out.format = hwSoftwarePixFmt_;
+    // NOTE: it would be great to keep data in hardware and utilize pixfmt conversion/scaling there
+    // instead of in software-based sws, if possible
     if (av_hwframe_transfer_data(&frame_out, hwFrame_, 0) < 0) {
       BROLL_LOG_ERROR("Error transferring the data to system memory");
       return false;
