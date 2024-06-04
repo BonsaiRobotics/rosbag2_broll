@@ -49,39 +49,6 @@ static AVFrame * allocPicture(enum AVPixelFormat pix_fmt, int width, int height)
   return picture;
 }
 
-static int hw_decoder_init(
-  AVBufferRef ** hw_device_ctx,
-  AVCodecContext * ctx,
-  const AVHWDeviceType type)
-{
-  int err = av_hwdevice_ctx_create(hw_device_ctx, type, nullptr, nullptr, 0);
-  if (err < 0) {
-    BROLL_LOG_ERROR("Failed to create specified HW device.");
-    return err;
-  }
-  ctx->hw_device_ctx = av_buffer_ref(*hw_device_ctx);
-  return err;
-}
-
-static AVPixelFormat hw_pix_fmt;
-static AVPixelFormat get_hw_format(
-  AVCodecContext *,
-  const AVPixelFormat * pix_fmts)
-{
-  const AVPixelFormat * p;
-
-  for (p = pix_fmts; *p != -1; p++) {
-    if (*p == hw_pix_fmt) {
-      return *p;
-    }
-  }
-
-  fprintf(stderr, "Failed to get HW surface format.\n");
-  return AV_PIX_FMT_NONE;
-}
-
-static const int64_t NS_TO_S = 1000000000;
-
 }  // namespace
 
 namespace broll
@@ -91,8 +58,8 @@ FrameDecoder::FrameDecoder(
   AVCodecID codec_id,
   AVPixelFormat target_fmt,
   double scale,
-  bool dbg_print,
-  bool use_cuda)
+  AVHWDeviceType hw_device_type,
+  bool dbg_print)
 : targetPixFmt_(target_fmt),
   scale_(scale),
   dbg_print_(dbg_print)
@@ -111,29 +78,25 @@ FrameDecoder::FrameDecoder(
     assert(false);
   }
 
-  AVHWDeviceType hw_device_type = av_hwdevice_find_type_by_name("cuda");
-  if (use_cuda) {
-    if (hw_device_type == AV_HWDEVICE_TYPE_NONE) {
-      BROLL_LOG_ERROR("Device type cuda is not supported");
-      assert(false);
-    }
+  bool use_hw = hw_device_type != AV_HWDEVICE_TYPE_NONE;
+  if (use_hw) {
     for (size_t i = 0;; i++) {
       const AVCodecHWConfig * config = avcodec_get_hw_config(codec_, i);
       if (!config) {
         BROLL_LOG_ERROR(
           "Decoder %s does not support device type %s.\n",
           codec_->name, av_hwdevice_get_type_name(hw_device_type));
-        assert(false);
+        throw std::runtime_error("Unsupported hardware device type");
       }
       if (
         config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
         config->device_type == hw_device_type)
       {
-        hw_pix_fmt = config->pix_fmt;
+        hwPixFmt_ = config->pix_fmt;
         break;
       }
     }
-    BROLL_LOG_INFO("Found HW pixel format %d", hw_pix_fmt);
+    BROLL_LOG_INFO("Hardware decoding enabled. Pixel format %s", av_get_pix_fmt_name(hwPixFmt_));
   }
 
   codecCtx_ = avcodec_alloc_context3(codec_);
@@ -148,16 +111,17 @@ FrameDecoder::FrameDecoder(
     assert(false && "failed to copy codec params to codec context");
   }
 
-  AVBufferRef * hw_device_ctx = nullptr;
-  if (use_cuda) {
-    codecCtx_->get_format = get_hw_format;
-    if (hw_decoder_init(&hw_device_ctx, codecCtx_, hw_device_type) < 0) {
-      assert(false && "Failed to initialize hardware decoder");
-    } else {
-      BROLL_LOG_INFO("Succeeded to init hardware decoder");
-      hardwareFrame_ = av_frame_alloc();
-      assert(hardwareFrame_ && "failed to alloc softwareFrame");
+  if (use_hw) {
+    codecCtx_->get_format = FrameDecoder::getHardwarePixelFormat;
+    int err = av_hwdevice_ctx_create(&hwDeviceCtx_, hw_device_type, nullptr, nullptr, 0);
+    if (err < 0) {
+      assert(false && "Failed to initialize hardware decoder.");
     }
+    codecCtx_->hw_device_ctx = av_buffer_ref(hwDeviceCtx_);
+
+    BROLL_LOG_INFO("Succeeded to init hardware decoder");
+    hwFrame_ = av_frame_alloc();
+    assert(hwFrame_ && "failed to alloc hardwareFrame");
   }
 
   if (avcodec_open2(codecCtx_, codec_, nullptr) < 0) {
@@ -193,8 +157,8 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
   }
 
   int recv_frame_resp;
-  if (hardwareFrame_) {
-    recv_frame_resp = avcodec_receive_frame(codecCtx_, hardwareFrame_);
+  if (hwFrame_) {
+    recv_frame_resp = avcodec_receive_frame(codecCtx_, hwFrame_);
   } else {
     recv_frame_resp = avcodec_receive_frame(codecCtx_, &frame_out);
   }
@@ -212,9 +176,13 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
     return false;
   }
 
-  if (hardwareFrame_ && hardwareFrame_->format == hw_pix_fmt) {
-    frame_out.format = AV_PIX_FMT_NV12;
-    if (av_hwframe_transfer_data(&frame_out, hardwareFrame_, 0) < 0) {
+  if (hwFrame_) {
+    if (hwFrame_->format != hwPixFmt_) {
+      BROLL_LOG_ERROR("Received hardware frame was not in expected pixel format.");
+      return false;
+    }
+    frame_out.format = AV_PIX_FMT_NV12;  // TODO(ek) not hardcode the software pixel format
+    if (av_hwframe_transfer_data(&frame_out, hwFrame_, 0) < 0) {
       BROLL_LOG_ERROR("Error transferring the data to system memory");
       return false;
     }
@@ -386,5 +354,20 @@ bool FrameDecoder::decode(
   packet_->data = nullptr;
   return res;
 }
+
+AVPixelFormat FrameDecoder::getHardwarePixelFormat(
+  AVCodecContext * ctx, const AVPixelFormat * pix_fmts)
+{
+  const AVPixelFormat * p;
+  const AVPixelFormat hwPixFmt = static_cast<FrameDecoder *>(ctx->opaque)->hwPixFmt_;
+  for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+    if (*p == hwPixFmt) {
+      return *p;
+    }
+  }
+  BROLL_LOG_ERROR("Failed to get HW surface format.");
+  return AV_PIX_FMT_NONE;
+}
+
 
 }  // namespace broll

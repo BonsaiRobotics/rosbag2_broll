@@ -38,13 +38,16 @@ public:
   /// @param target_fmt Pixel format to convert to, if necessary.
   ///   AV_PIX_FMT_NONE guarantees no conversion.
   /// @param scale Scale applied to image dimensions (by multiplication, 0.5 is half size)
+  /// @param hw_device_type Attempt to use hardware decoding device of this type.
+  ///   AV_HWDEVICE_TYPE_NONE uses software decoding only.
   /// @param dbg_print Print info about each decoded frame to stdout
+  /// @throws std::invalid_argument if hw_device_type is not supported
   FrameDecoder(
     AVCodecID codec_id,
     AVPixelFormat target_fmt = AV_PIX_FMT_NONE,
     double scale = 1.0f,
-    bool dbg_print = false,
-    bool use_cuda = false);
+    AVHWDeviceType hw_device_type = AV_HWDEVICE_TYPE_NONE,
+    bool dbg_print = false);
   virtual ~FrameDecoder();
 
   /// @brief Decode a compressed image packet into an image message
@@ -80,14 +83,23 @@ protected:
   /// available in HEVC decoder internals, so we would need to use libx265 directly to detect.
   void startSkippingPFrames();
 
+  /// @brief Function to help AVCodecContext pick a pixel format that matches hwPixFmt_.
+  ///
+  /// Only used if hardware decoding is enabled.
+  static AVPixelFormat getHardwarePixelFormat(AVCodecContext * ctx, const AVPixelFormat * pix_fmts);
+
   AVPacket * packet_ = nullptr;
   const AVCodec * codec_ = nullptr;
   AVCodecContext * codecCtx_ = nullptr;
   AVPixelFormat targetPixFmt_ = AV_PIX_FMT_NONE;
   SwsContext * swsCtx_ = nullptr;
   AVFrame * decodedFrame_ = nullptr;
-  AVFrame * hardwareFrame_ = nullptr;
   AVFrame * convertedFrame_ = nullptr;
+
+  // Hardware decoding extras
+  AVPixelFormat hwPixFmt_ = AV_PIX_FMT_NONE;
+  AVBufferRef * hwDeviceCtx_ = nullptr;
+  AVFrame * hwFrame_ = nullptr;
 
   float scale_ = 1.0f;
   uint scaled_width_ = 0u;
