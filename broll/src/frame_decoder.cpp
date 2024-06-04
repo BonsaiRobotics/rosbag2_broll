@@ -49,7 +49,10 @@ static AVFrame * allocPicture(enum AVPixelFormat pix_fmt, int width, int height)
   return picture;
 }
 
-static int hw_decoder_init(AVBufferRef ** hw_device_ctx, AVCodecContext *ctx, const enum AVHWDeviceType type)
+static int hw_decoder_init(
+  AVBufferRef ** hw_device_ctx,
+  AVCodecContext * ctx,
+  const AVHWDeviceType type)
 {
   int err = av_hwdevice_ctx_create(hw_device_ctx, type, nullptr, nullptr, 0);
   if (err < 0) {
@@ -60,12 +63,12 @@ static int hw_decoder_init(AVBufferRef ** hw_device_ctx, AVCodecContext *ctx, co
   return err;
 }
 
-static enum AVPixelFormat hw_pix_fmt;
-static enum AVPixelFormat get_hw_format(
+static AVPixelFormat hw_pix_fmt;
+static AVPixelFormat get_hw_format(
   AVCodecContext *,
   const AVPixelFormat * pix_fmts)
 {
-  const enum AVPixelFormat *p;
+  const AVPixelFormat * p;
 
   for (p = pix_fmts; *p != -1; p++) {
     if (*p == hw_pix_fmt) {
@@ -122,7 +125,10 @@ FrameDecoder::FrameDecoder(
           codec_->name, av_hwdevice_get_type_name(hw_device_type));
         assert(false);
       }
-      if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == hw_device_type) {
+      if (
+        config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+        config->device_type == hw_device_type)
+      {
         hw_pix_fmt = config->pix_fmt;
         break;
       }
