@@ -78,8 +78,20 @@ FrameDecoder::FrameDecoder(
     assert(false);
   }
 
-  bool use_hw = hw_device_type != AV_HWDEVICE_TYPE_NONE;
-  if (use_hw) {
+  codecCtx_ = avcodec_alloc_context3(codec_);
+  if (!codecCtx_) {
+    BROLL_LOG_ERROR("Failed to alloc context");
+    assert(false);
+  }
+  codecCtx_->opaque = this;
+  av_log_set_callback(&FrameDecoder::avLogCallbackWrapper);
+
+  if (avcodec_parameters_to_context(codecCtx_, params) < 0) {
+    assert(false && "failed to copy codec params to codec context");
+  }
+
+  if (hw_device_type != AV_HWDEVICE_TYPE_NONE) {
+    // Read HW configs 0->N until finding the one we're looking for or it returns nullptr
     for (size_t i = 0;; i++) {
       const AVCodecHWConfig * config = avcodec_get_hw_config(codec_, i);
       if (!config) {
@@ -96,24 +108,10 @@ FrameDecoder::FrameDecoder(
         break;
       }
     }
+
     BROLL_LOG_INFO(
       "Hardware decoding enabled. Pixel format \"%s\"",
       av_get_pix_fmt_name(hwPixFmt_));
-  }
-
-  codecCtx_ = avcodec_alloc_context3(codec_);
-  if (!codecCtx_) {
-    BROLL_LOG_ERROR("Failed to alloc context");
-    assert(false);
-  }
-  codecCtx_->opaque = this;
-  av_log_set_callback(&FrameDecoder::avLogCallbackWrapper);
-
-  if (avcodec_parameters_to_context(codecCtx_, params) < 0) {
-    assert(false && "failed to copy codec params to codec context");
-  }
-
-  if (use_hw) {
     codecCtx_->get_format = FrameDecoder::getHardwarePixelFormat;
     int err = av_hwdevice_ctx_create(&hwDeviceCtx_, hw_device_type, nullptr, nullptr, 0);
     if (err < 0) {
@@ -204,9 +202,9 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
       BROLL_LOG_ERROR("Received hardware frame was not in expected pixel format.");
       return false;
     }
+    // Move the frame from hardware device memory to CPU memory.
+    // Setting the pixel format on frame_out prompts the transfer to convert to a specific format.
     frame_out.format = hwSoftwarePixFmt_;
-    // NOTE: it would be great to keep data in hardware and utilize pixfmt conversion/scaling there
-    // instead of in software-based sws, if possible
     if (av_hwframe_transfer_data(&frame_out, hwFrame_, 0) < 0) {
       BROLL_LOG_ERROR("Error transferring the data to system memory");
       return false;

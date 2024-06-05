@@ -97,8 +97,13 @@ protected:
   AVFrame * convertedFrame_ = nullptr;
 
   // Hardware decoding extras
-  AVPixelFormat hwPixFmt_ = AV_PIX_FMT_NONE;  // Pixel format on the hardware memory side
-  AVPixelFormat hwSoftwarePixFmt_ = AV_PIX_FMT_NONE;  // Software-side pixel format from hardware
+  // Pixel format reported for an on-hardware DMA frame, such as "cuda", which isn't
+  // a real pixel format but how the frame reports that it isn't in CPU memory.
+  AVPixelFormat hwPixFmt_ = AV_PIX_FMT_NONE;
+  // Pixel format to convert to when transferring the frame from hardware into CPU memory.
+  // Hardware devices offer several options, but not all that we might want so this
+  // is the pre-conversion format before sws.
+  AVPixelFormat hwSoftwarePixFmt_ = AV_PIX_FMT_NONE;
   AVBufferRef * hwDeviceCtx_ = nullptr;
   AVFrame * hwFrame_ = nullptr;
 
