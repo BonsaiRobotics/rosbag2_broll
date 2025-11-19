@@ -199,7 +199,12 @@ bool FrameDecoder::decodeFrame(const AVPacket & packet_in, AVFrame & frame_out)
 
   if (hwFrame_) {
     if (hwFrame_->format != hwPixFmt_) {
-      BROLL_LOG_ERROR("Received hardware frame was not in expected pixel format.");
+      BROLL_LOG_ERROR(
+        "Received hardware frame was not in expected pixel format. got=\"%s\" (%d) expected=\"%s\" (%d)",
+        av_get_pix_fmt_name(static_cast<AVPixelFormat>(hwFrame_->format)),
+        hwFrame_->format,
+        av_get_pix_fmt_name(hwPixFmt_),
+        hwPixFmt_);
       return false;
     }
     // Move the frame from hardware device memory to CPU memory.
